@@ -400,6 +400,53 @@ function toDb(s){
   };
 }
 
+// ===================================================================
+// The Excel formula engine — every derived metric computed LIVE from
+// raw inputs, mirroring the " Roster" sheet column-for-column.
+// ===================================================================
+function axNum(v) { return (v === null || v === undefined || v === '') ? null : +v; }
+function rawNorm(s) {
+  return {
+    gym: +s.gym || 0, outdoorHrs: +s.outdoorHrs || 0, indoorHrs: +s.indoorHrs || 0, games: +s.games || 0,
+    weightG: axNum(s.weightG), price: axNum(s.price), prefBefore: axNum(s.prefBefore), prefAfter: axNum(s.prefAfter),
+    purchaseDate: s.purchaseDate || '',
+    footHealth: axNum(s.footHealth), grip: axNum(s.grip), fit: axNum(s.fit), response: axNum(s.response),
+    lowProfile: axNum(s.lowProfile), foreCushion: axNum(s.foreCushion), heelCushion: axNum(s.heelCushion),
+    transition: axNum(s.transition), comfort: axNum(s.comfort), perfOverride: axNum(s.perfOverride)
+  };
+}
+function parseOwnedDays(str) {            // Z = DAYS(TODAY(), date)
+  if (!str) return null;
+  const p = String(str).trim().split(/[\/\-\s.]+/).map(Number);
+  if (p.length < 3 || p.some(isNaN)) return null;
+  const d = new Date(p[2], p[1] - 1, p[0]);
+  if (isNaN(d.getTime())) return null;
+  return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+}
+function fleetCtx(rawArr) {               // collection-wide references
+  const totals = rawArr.map(r => r.gym + r.outdoorHrs + r.indoorHrs + r.games);
+  const sumTotals = totals.reduce((a, b) => a + b, 0);
+  const ws = rawArr.map(r => r.weightG).filter(w => w != null && w > 0);
+  const avgWeight = ws.length ? ws.reduce((a, b) => a + b, 0) / ws.length : 0;
+  return { sumTotals, avgWeight };
+}
+function metricsOf(r, ctx) {
+  const total = r.gym + r.outdoorHrs + r.indoorHrs + r.games;                                  // W (incl. games)
+  const weightPct = (r.weightG > 0 && ctx.avgWeight > 0) ? ctx.avgWeight / r.weightG * 10 : null; // M
+  const axes = [r.grip, r.fit, r.response, r.lowProfile, r.foreCushion, r.heelCushion, r.transition, r.comfort];
+  const rated = weightPct != null || axes.some(v => v != null) || r.footHealth != null;
+  const perfAuto = rated ? ((weightPct || 0) + axes.reduce((a, v) => a + (v || 0), 0) + 2 * (r.footHealth || 0)) / 11 : null; // D
+  const perf = (r.perfOverride != null) ? r.perfOverride : perfAuto;
+  const price = r.price;
+  const value = (perf != null && price != null && price > 0) ? perf / price * 100 : null;        // AD
+  const unitPrice = (price != null && total > 0) ? price / total : null;                          // AB
+  const lifespan = total / 120 * 100;                                                             // F
+  const ownedDays = parseOwnedDays(r.purchaseDate);                                               // Z
+  const prefDiff = (r.prefBefore != null && r.prefBefore > 0) ? (r.prefAfter - r.prefBefore) / r.prefBefore * 100 : 0; // E
+  const useRate = ctx.sumTotals > 0 ? total / ctx.sumTotals * 100 : 0;                            // AG
+  return { total, weightPct, perf, perfAuto, value, unitPrice, lifespan, ownedDays, prefDiff, useRate };
+}
+
 class Component extends DCLogic {
   state = { booting: true, authed: false, ready: false, data: [], view: 'grid', editingId: null, filter: 'ALL', metricIdx: {}, flipped: {}, expandedId: null, form: {}, saving: false, loginEmail: '', loginPw: '', loginError: '', loginBusy: false };
 
@@ -424,7 +471,7 @@ class Component extends DCLogic {
   async loadData() {
     const { data, error } = await this.sb.from('sneakers').select('*').order('position', { ascending: true });
     if (error) { console.error('load failed', error); this.setState({ ready: true, data: [] }); return; }
-    this.setState({ ready: true, data: this.normUse((data || []).map(fromDb)) });
+    this.setState({ ready: true, data: (data || []).map(fromDb) });
   }
   async doLogin() {
     const email = (this.state.loginEmail || '').trim(), password = this.state.loginPw || '';
@@ -456,7 +503,7 @@ class Component extends DCLogic {
       gym: s.gym != null ? String(s.gym) : '', indoorHrs: s.indoorHrs != null ? String(s.indoorHrs) : '', outdoorHrs: s.outdoorHrs != null ? String(s.outdoorHrs) : '',
       games: s.games != null ? String(s.games) : '', pointsLog: s.pointsLog || '',
       prefBefore: s.prefBefore != null ? String(s.prefBefore) : '', prefAfter: s.prefAfter != null ? String(s.prefAfter) : '',
-      notes: s.desc || '', perfOverride: s.perf != null ? String(s.perf) : '',
+      notes: s.desc || '', perfOverride: '',
     });
     this.axisKeys.forEach(k => f[k] = s[k] != null ? String(s[k]) : '');
     return f;
@@ -484,23 +531,15 @@ class Component extends DCLogic {
   num(v) { return v === '' || v == null ? null : (+v); }
 
   computeDerived(f) {
-    const gym = +f.gym || 0, ih = +f.indoorHrs || 0, oh = +f.outdoorHrs || 0;
-    const total = gym + ih + oh;
-    const rated = this.axisKeys.map(k => +f[k]).filter(v => v > 0);
-    const perfAuto = rated.length ? rated.reduce((a, b) => a + b, 0) / rated.length : 0;
-    const perf = (f.perfOverride !== '' && f.perfOverride != null) ? +f.perfOverride : perfAuto;
-    const price = +f.price || 0;
-    const value = price > 0 ? perf * 100 / price : null;
-    const unitPrice = total > 0 ? price / total : null;
-    const lifespan = total / 120 * 100;
-    const weightG = +f.weight || 0;
-    const weightPct = weightG > 0 ? 3785 / weightG : null;
-    const ownedDays = this.parseOwned(f.purchaseDate);
-    const pb = +f.prefBefore || 0, pa = +f.prefAfter || 0;
-    const prefDiff = pb > 0 ? (pa - pb) / pb * 100 : 0;
-    const others = this.state.data.filter(s => this.state.editingId == null || s.id !== this.state.editingId).reduce((a, s) => a + (s.totalHours || 0), 0);
-    const useRate = (others + total) > 0 ? total / (others + total) * 100 : 0;
-    return { total, perf, perfAuto, value, unitPrice, lifespan, weightG, weightPct, ownedDays, prefDiff, useRate };
+    const formRaw = rawNorm({
+      gym: f.gym, outdoorHrs: f.outdoorHrs, indoorHrs: f.indoorHrs, games: f.games,
+      weightG: f.weight, price: f.price, prefBefore: f.prefBefore, prefAfter: f.prefAfter,
+      purchaseDate: f.purchaseDate, footHealth: f.footHealth, grip: f.grip, fit: f.fit,
+      response: f.response, lowProfile: f.lowProfile, foreCushion: f.foreCushion,
+      heelCushion: f.heelCushion, transition: f.transition, comfort: f.comfort, perfOverride: f.perfOverride
+    });
+    const others = this.state.data.filter(s => this.state.editingId == null || s.id !== this.state.editingId).map(rawNorm);
+    return metricsOf(formRaw, fleetCtx(others.concat([formRaw])));
   }
 
   async commitForm() {
@@ -601,33 +640,37 @@ class Component extends DCLogic {
     const data = this.state.data;
     const view = this.state.view;
 
-    const maxH = Math.max(1, ...data.map(s => s.totalHours || 0));
-    const maxUse = Math.max(0.01, ...data.map(s => s.useRate || 0));
-    const maxVal = Math.max(0.01, ...data.map(s => s.value || 0));
+    const rawArr = data.map(rawNorm);
+    const ctx = fleetCtx(rawArr);
+    const M = {}; data.forEach((s, i) => { M[s.id] = metricsOf(rawArr[i], ctx); });
+
+    const maxH = Math.max(1, ...data.map(s => M[s.id].total || 0));
+    const maxUse = Math.max(0.01, ...data.map(s => M[s.id].useRate || 0));
+    const maxVal = Math.max(0.01, ...data.map(s => M[s.id].value || 0));
     const maxPrice = Math.max(1, ...data.map(s => s.price || 0));
-    const maxUnit = Math.max(0.01, ...data.map(s => s.unitPrice || 0));
-    const maxOwned = Math.max(1, ...data.map(s => s.ownedDays || 0));
+    const maxUnit = Math.max(0.01, ...data.map(s => M[s.id].unitPrice || 0));
+    const maxOwned = Math.max(1, ...data.map(s => M[s.id].ownedDays || 0));
     const maxGames = Math.max(1, ...data.map(s => s.games || 0));
     const maxWeight = Math.max(1, ...data.map(s => s.weightG || 0));
     const clamp = v => Math.max(0, Math.min(100, v || 0));
     const r10 = v => v != null ? String(v) : '—';
 
-    const dataItems = s => [
-      { en: 'PERF', zh: '实战指标', val: (s.perf || 0).toFixed(2), pct: clamp((s.perf || 0) / 10 * 100) },
-      { en: 'VALUE', zh: '性价比', val: (s.value || 0).toFixed(2), pct: clamp((s.value || 0) / maxVal * 100) },
-      { en: 'USE', zh: '使用率', val: (s.useRate || 0).toFixed(2) + '%', pct: clamp((s.useRate || 0) / maxUse * 100) },
-      { en: 'TOTAL', zh: '总时长', val: Math.round(s.totalHours || 0) + 'h', pct: clamp((s.totalHours || 0) / maxH * 100) },
-      { en: 'LIFE', zh: '寿命', val: (s.lifespan != null ? Math.round(s.lifespan) : 0) + '%', pct: clamp(s.lifespan || 0) },
-      { en: '£/HR', zh: '单位价格', val: s.unitPrice != null ? '£' + s.unitPrice.toFixed(2) : '—', pct: clamp((s.unitPrice || 0) / maxUnit * 100) },
+    const dataItems = (s, m) => [
+      { en: 'PERF', zh: '实战指标', val: (m.perf || 0).toFixed(2), pct: clamp((m.perf || 0) / 10 * 100) },
+      { en: 'VALUE', zh: '性价比', val: (m.value || 0).toFixed(2), pct: clamp((m.value || 0) / maxVal * 100) },
+      { en: 'USE', zh: '使用率', val: (m.useRate || 0).toFixed(2) + '%', pct: clamp((m.useRate || 0) / maxUse * 100) },
+      { en: 'TOTAL', zh: '总时长', val: Math.round(m.total || 0) + 'h', pct: clamp((m.total || 0) / maxH * 100) },
+      { en: 'LIFE', zh: '寿命', val: (m.lifespan != null ? Math.round(m.lifespan) : 0) + '%', pct: clamp(m.lifespan || 0) },
+      { en: '£/HR', zh: '单位价格', val: m.unitPrice != null ? '£' + m.unitPrice.toFixed(2) : '—', pct: clamp((m.unitPrice || 0) / maxUnit * 100) },
       { en: 'PRICE', zh: '购入价', val: s.price != null ? '£' + Math.round(s.price) : '—', pct: clamp((s.price || 0) / maxPrice * 100) },
-      { en: 'OWNED', zh: '拥有天数', val: (s.ownedDays != null ? s.ownedDays : 0) + 'd', pct: clamp((s.ownedDays || 0) / maxOwned * 100) },
+      { en: 'OWNED', zh: '拥有天数', val: (m.ownedDays != null ? m.ownedDays : 0) + 'd', pct: clamp((m.ownedDays || 0) / maxOwned * 100) },
       { en: 'GAMES', zh: '比赛场次', val: String(s.games || 0), pct: clamp((s.games || 0) / maxGames * 100) },
       { en: 'GYM', zh: '健身房', val: (s.gym || 0) + 'h', pct: clamp((s.gym || 0) / maxH * 100) },
       { en: 'INDOOR', zh: '内场', val: (s.indoorHrs || 0) + 'h', pct: clamp((s.indoorHrs || 0) / maxH * 100) },
       { en: 'OUTDOOR', zh: '外场', val: (s.outdoorHrs || 0) + 'h', pct: clamp((s.outdoorHrs || 0) / maxH * 100) },
       { en: 'WEIGHT', zh: '重量', val: (s.weightG != null ? s.weightG : 0) + 'g', pct: clamp((s.weightG || 0) / maxWeight * 100) },
-      { en: 'WT %', zh: '重量占比', val: s.weightPct != null ? s.weightPct.toFixed(1) + '%' : '—', pct: clamp(s.weightPct || 0) },
-      { en: 'PREF±', zh: '偏好变化', val: (s.prefDiff != null ? (s.prefDiff > 0 ? '+' : '') + Math.round(s.prefDiff) : 0) + '%', pct: clamp(((s.prefDiff || 0) + 100) / 2) },
+      { en: 'WT %', zh: '重量占比', val: m.weightPct != null ? m.weightPct.toFixed(1) + '%' : '—', pct: clamp(m.weightPct || 0) },
+      { en: 'PREF±', zh: '偏好变化', val: (m.prefDiff != null ? (m.prefDiff > 0 ? '+' : '') + Math.round(m.prefDiff) : 0) + '%', pct: clamp(((m.prefDiff || 0) + 100) / 2) },
       { en: 'FOOT', zh: '足部健康', val: r10(s.footHealth), pct: clamp((s.footHealth || 0) * 10) },
       { en: 'GRIP', zh: '抓地', val: r10(s.grip), pct: clamp((s.grip || 0) * 10) },
       { en: 'FIT', zh: '鞋楦匹配', val: r10(s.fit), pct: clamp((s.fit || 0) * 10) },
@@ -652,10 +695,11 @@ class Component extends DCLogic {
       ]);
     }));
 
-    const filtered = (this.state.filter === 'ALL' ? data : data.filter(s => s.status === this.state.filter)).slice().sort((a, b) => (b.perf || 0) - (a.perf || 0));
+    const filtered = (this.state.filter === 'ALL' ? data : data.filter(s => s.status === this.state.filter)).slice().sort((a, b) => ((M[b.id].perf || 0) - (M[a.id].perf || 0)));
     const cardShoes = filtered.map(s => {
+      const m = M[s.id];
       const idx = (this.state.metricIdx[s.id] || 0) % N;
-      const items = dataItems(s); const cur = items[idx]; const lc = this.scaleColor(cur.pct);
+      const items = dataItems(s, m); const cur = items[idx]; const lc = this.scaleColor(cur.pct);
       const segs = 14, lit = Math.round(cur.pct / 100 * segs);
       const batteryEl = h('div', { style: { display: 'flex', gap: 2, height: 13, alignItems: 'stretch' } }, Array.from({ length: segs }, (_, i) => h('div', { key: i, style: { flex: 1, borderRadius: 1, background: i < lit ? lc : 'rgba(255,255,255,.1)' } })));
       return {
@@ -670,9 +714,9 @@ class Component extends DCLogic {
         notes: s.desc && s.desc.length ? s.desc : '— 无笔记 / no notes —',
         pointsLog: s.pointsLog || '', hasPoints: !!(s.pointsLog && s.pointsLog.trim()),
         gauges: [
-          { disp: (s.value || 0).toFixed(1), en: 'VALUE', zh: '性价比', gaugeEl: this.makeGauge(s.value || 0, maxVal, this.scaleColor((s.value || 0) / maxVal * 100), 50) },
-          { disp: String(Math.round(s.totalHours || 0)), en: 'HOURS', zh: '时长', gaugeEl: this.makeGauge(s.totalHours || 0, maxH, this.scaleColor((s.totalHours || 0) / maxH * 100), 50) },
-          { disp: (s.useRate || 0).toFixed(1), en: 'USE', zh: '使用率', gaugeEl: this.makeGauge(s.useRate || 0, maxUse, this.scaleColor((s.useRate || 0) / maxUse * 100), 50) },
+          { disp: (m.value || 0).toFixed(1), en: 'VALUE', zh: '性价比', gaugeEl: this.makeGauge(m.value || 0, maxVal, this.scaleColor((m.value || 0) / maxVal * 100), 50) },
+          { disp: String(Math.round(m.total || 0)), en: 'HOURS', zh: '时长', gaugeEl: this.makeGauge(m.total || 0, maxH, this.scaleColor((m.total || 0) / maxH * 100), 50) },
+          { disp: (m.useRate || 0).toFixed(1), en: 'USE', zh: '使用率', gaugeEl: this.makeGauge(m.useRate || 0, maxUse, this.scaleColor((m.useRate || 0) / maxUse * 100), 50) },
         ],
       };
     });
@@ -701,7 +745,7 @@ class Component extends DCLogic {
     const pf = {}; (this.axisKeys || []).forEach(k => pf[k] = +(F[k]) || 0);
 
     const expShoe = this.state.expandedId != null ? data.find(s => s.id === this.state.expandedId) : null;
-    const expItems = expShoe ? dataItems(expShoe).map((it, i) => {
+    const expItems = expShoe ? dataItems(expShoe, M[expShoe.id]).map((it, i) => {
       const c = this.scaleColor(it.pct); const segs = 14, lit = Math.round(it.pct / 100 * segs);
       const batteryEl = h('div', { style: { display: 'flex', gap: 2, height: 9, alignItems: 'stretch' } }, Array.from({ length: segs }, (_, k) => h('div', { key: k, style: { flex: 1, borderRadius: 1, background: k < lit ? c : 'rgba(255,255,255,.1)' } })));
       return { num: String(i + 1).padStart(2, '0'), en: it.en, zh: it.zh, val: it.val, color: c, batteryEl };
@@ -709,7 +753,7 @@ class Component extends DCLogic {
 
     return Object.assign(base, {
       isLoading: false, isLogin: false, isGrid: view === 'grid', isForm: view === 'form',
-      count: data.length, totalHours: Math.round(data.reduce((a, s) => a + (s.totalHours || 0), 0)),
+      count: data.length, totalHours: Math.round(data.reduce((a, s) => a + (M[s.id].total || 0), 0)),
       filterChips, cardShoes,
       hasExpanded: !!expShoe, expName: expShoe ? expShoe.name : '', expItems,
       closeExpand: () => this.closeExpand(), stopProp: (e) => e.stopPropagation(),
