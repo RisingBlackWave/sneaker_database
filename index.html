@@ -1,419 +1,737 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sneaker OS</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --bg:#f6f5f2; --panel:#ffffff; --ink:#16150f; --muted:#7a766c;
-    --line:#e7e4dd; --line-2:#d9d5cc; --accent:#c8442a; --accent-soft:#f3e0da;
-    --good:#3f7d54; --good-bg:#e7f0e8; --warn:#9a6b1f; --warn-bg:#f6ecd7;
-    --slate:#5d6470; --slate-bg:#e9eaed; --rose:#9a4759; --rose-bg:#f3e3e6;
-    --radius:14px; --shadow:0 1px 2px rgba(0,0,0,.04),0 12px 40px rgba(20,18,12,.10);
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0}
-  body{
-    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-    background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased;
-    font-size:14px; line-height:1.45;
-  }
-  .wrap{max-width:1180px; margin:0 auto; padding:28px 22px 80px}
-  header.top{display:flex; align-items:flex-end; justify-content:space-between; gap:18px; flex-wrap:wrap; margin-bottom:18px}
-  .brand{display:flex; align-items:center; gap:11px}
-  .mark{width:30px; height:30px; border-radius:9px; background:var(--ink); color:#fff; display:grid; place-items:center; font-weight:700; font-size:15px; letter-spacing:-.5px}
-  .brand h1{font-size:20px; font-weight:700; letter-spacing:-.4px; margin:0}
-  .brand .sub{font-size:12px; color:var(--muted); margin-top:1px}
-  .actions{display:flex; align-items:center; gap:9px; flex-wrap:wrap}
-  button,.btn{font-family:inherit; font-size:13px; font-weight:500; border-radius:9px; border:1px solid var(--line-2); background:var(--panel); color:var(--ink); padding:8px 13px; cursor:pointer; transition:.15s; white-space:nowrap}
-  button:hover,.btn:hover{border-color:#bdb8ad; background:#fff}
-  button.primary{background:var(--ink); color:#fff; border-color:var(--ink)}
-  button.primary:hover{background:#000}
-  button.ghost{background:transparent; border-color:transparent; color:var(--muted)}
-  button.ghost:hover{color:var(--ink); background:rgba(0,0,0,.04)}
-  button.danger{color:var(--accent); border-color:var(--accent-soft)}
-  button.danger:hover{background:var(--accent-soft)}
-  button:disabled{opacity:.5; cursor:not-allowed}
-
-  .stats{display:flex; gap:26px; flex-wrap:wrap; padding:14px 2px 20px; border-bottom:1px solid var(--line); margin-bottom:14px}
-  .stat .n{font-size:21px; font-weight:700; letter-spacing:-.5px; font-variant-numeric:tabular-nums}
-  .stat .l{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; margin-top:1px}
-
-  .toolbar{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px}
-  .search{flex:1; min-width:200px; position:relative}
-  .search input{width:100%; border:1px solid var(--line-2); background:var(--panel); border-radius:10px; padding:9px 12px 9px 34px; font-size:13px; font-family:inherit}
-  .search svg{position:absolute; left:11px; top:50%; transform:translateY(-50%); color:var(--muted)}
-  select.filter{border:1px solid var(--line-2); background:var(--panel); border-radius:10px; padding:9px 12px; font-size:13px; font-family:inherit; color:var(--ink)}
-
-  .tablecard{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden}
-  .scroll{overflow-x:auto}
-  table{width:100%; border-collapse:collapse; min-width:760px}
-  thead th{position:sticky; top:0; background:#faf9f6; text-align:left; font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; padding:11px 12px; border-bottom:1px solid var(--line); cursor:pointer; white-space:nowrap; user-select:none}
-  thead th.num{text-align:right}
-  thead th .arr{opacity:.5; font-size:9px}
-  tbody td{padding:11px 12px; border-bottom:1px solid var(--line); vertical-align:middle; white-space:nowrap}
-  tbody tr:last-child td{border-bottom:none}
-  tbody tr{cursor:pointer; transition:.1s}
-  tbody tr:hover{background:#faf8f4}
-  td.num{text-align:right; font-variant-numeric:tabular-nums}
-  td.name{font-weight:600; white-space:normal; min-width:190px}
-  .idx{color:var(--muted); font-variant-numeric:tabular-nums; font-size:12px}
-  .pill{display:inline-block; padding:2.5px 9px; border-radius:999px; font-size:11px; font-weight:600; letter-spacing:.2px}
-  .pill.roster{background:var(--good-bg); color:var(--good)}
-  .pill.retired{background:var(--slate-bg); color:var(--slate)}
-  .pill.out{background:var(--warn-bg); color:var(--warn)}
-  .pill.sold{background:var(--rose-bg); color:var(--rose)}
-  .pill.none{background:#eee; color:#999}
-  .score{display:flex; align-items:center; gap:8px; justify-content:flex-end}
-  .score .bar{width:46px; height:5px; border-radius:3px; background:var(--line); overflow:hidden}
-  .score .bar i{display:block; height:100%; background:var(--accent)}
-  .court{font-size:12px; color:var(--muted)}
-  .empty{padding:48px; text-align:center; color:var(--muted)}
-
-  /* modal */
-  .overlay{position:fixed; inset:0; background:rgba(22,21,15,.42); backdrop-filter:blur(2px); display:none; align-items:flex-start; justify-content:center; padding:40px 16px; z-index:50; overflow:auto}
-  .overlay.show{display:flex}
-  .modal{background:var(--panel); border-radius:18px; box-shadow:var(--shadow); width:100%; max-width:720px; overflow:hidden}
-  .modal.sm{max-width:380px}
-  .modal-head{display:flex; align-items:center; justify-content:space-between; padding:18px 22px; border-bottom:1px solid var(--line)}
-  .modal-head h2{margin:0; font-size:16px; font-weight:700; letter-spacing:-.3px}
-  .modal-body{padding:20px 22px; max-height:65vh; overflow:auto}
-  .modal-foot{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:15px 22px; border-top:1px solid var(--line); background:#fbfaf7}
-  .grp{margin-bottom:20px}
-  .grp h3{font-size:11px; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); margin:0 0 10px; font-weight:600}
-  .fields{display:grid; grid-template-columns:repeat(3,1fr); gap:12px}
-  .fields.notes{grid-template-columns:1fr}
-  .field{display:flex; flex-direction:column; gap:4px}
-  .field.wide{grid-column:1/-1}
-  .field label{font-size:11px; color:var(--muted); font-weight:500}
-  .field input,.field textarea{font-family:inherit; font-size:13px; border:1px solid var(--line-2); border-radius:8px; padding:8px 10px; background:#fff; color:var(--ink); width:100%}
-  .field input:focus,.field textarea:focus{outline:none; border-color:var(--ink)}
-  .field input:disabled,.field textarea:disabled{background:#f7f6f3; color:#3a382f; cursor:default}
-  .field textarea{resize:vertical; min-height:64px; line-height:1.5}
-  .login-row{display:flex; flex-direction:column; gap:11px}
-  .note{font-size:12px; color:var(--muted); line-height:1.5}
-  .err{color:var(--accent); font-size:12.5px; min-height:16px}
-
-  /* toast */
-  #toast{position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--ink); color:#fff; padding:11px 18px; border-radius:11px; font-size:13px; box-shadow:var(--shadow); opacity:0; pointer-events:none; transition:.25s; z-index:80; max-width:90vw}
-  #toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
-  #toast.bad{background:var(--accent)}
-  footer{margin-top:26px; text-align:center; color:var(--muted); font-size:12px}
-  footer a{color:var(--muted)}
-  @media(max-width:680px){ .fields{grid-template-columns:1fr 1fr} .stats{gap:18px} }
-</style>
+<style>html,body{background:#121110}</style>
+<script src="./support.js"></script>
 </head>
 <body>
-<div class="wrap">
-  <header class="top">
-    <div class="brand">
-      <div class="mark">S</div>
-      <div>
-        <h1>Sneaker OS</h1>
-        <div class="sub" id="subtitle">basketball shoe roster</div>
-      </div>
-    </div>
-    <div class="actions">
-      <button id="addBtn" class="primary" style="display:none">+ Add sneaker</button>
-      <button id="exportBtn" class="ghost">Export CSV</button>
-      <button id="authBtn">Log in</button>
-    </div>
-  </header>
-
-  <div class="stats" id="stats"></div>
-
-  <div class="toolbar">
-    <div class="search">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-      <input id="search" placeholder="Search by name, review, match log…" />
-    </div>
-    <select class="filter" id="statusFilter"><option value="">All status</option></select>
-    <select class="filter" id="courtFilter"><option value="">All courts</option></select>
-  </div>
-
-  <div class="tablecard">
-    <div class="scroll">
-      <table>
-        <thead><tr id="head"></tr></thead>
-        <tbody id="rows"></tbody>
-      </table>
-    </div>
-    <div class="empty" id="empty" style="display:none">No sneakers match.</div>
-  </div>
-
-  <footer>
-    Stored in Supabase · public can view, only you can edit ·
-    <a href="legacy.html">original demo</a>
-  </footer>
-</div>
-
-<!-- Detail / edit modal -->
-<div class="overlay" id="detailOverlay">
-  <div class="modal">
-    <div class="modal-head">
-      <h2 id="detailTitle">Sneaker</h2>
-      <button class="ghost" onclick="closeDetail()">✕</button>
-    </div>
-    <div class="modal-body" id="detailBody"></div>
-    <div class="modal-foot">
-      <button class="danger" id="deleteBtn" style="display:none">Delete</button>
-      <div style="flex:1"></div>
-      <button class="ghost" onclick="closeDetail()">Close</button>
-      <button class="primary" id="saveBtn" style="display:none">Save</button>
-    </div>
-  </div>
-</div>
-
-<!-- Login modal -->
-<div class="overlay" id="loginOverlay">
-  <div class="modal sm">
-    <div class="modal-head"><h2>Log in</h2><button class="ghost" onclick="closeLogin()">✕</button></div>
-    <div class="modal-body">
-      <div class="login-row">
-        <div class="field"><label>Email</label><input id="email" type="email" autocomplete="username" /></div>
-        <div class="field"><label>Password</label><input id="password" type="password" autocomplete="current-password" /></div>
-        <div class="err" id="loginErr"></div>
-        <div class="note">Only your account can edit the roster. Everyone else sees a read-only view.</div>
-      </div>
-    </div>
-    <div class="modal-foot">
-      <div style="flex:1"></div>
-      <button class="ghost" onclick="closeLogin()">Cancel</button>
-      <button class="primary" id="loginSubmit">Log in</button>
-    </div>
-  </div>
-</div>
-
-<div id="toast"></div>
-
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&amp;family=Space+Mono:wght@400;700&amp;family=Noto+Sans+SC:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#121110;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  input,textarea,select{font-family:'Space Mono',monospace}
+  textarea{resize:vertical}
+  input::placeholder,textarea::placeholder{color:#b3b0a3}
+</style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
+</helmet>
+
+<div style="min-height:100vh;background:#121110;padding:30px 38px">
+  <div style="max-width:1180px;margin:0 auto">
+
+    <!-- ================= LOADING ================= -->
+    <sc-if value="{{ isLoading }}" hint-placeholder-val="{{ false }}">
+      <div style="min-height:78vh;display:flex;align-items:center;justify-content:center">
+        <div style="font:400 11px/1 'Space Mono',monospace;letter-spacing:.22em;color:#8A8780;text-transform:uppercase">connecting · 连接中…</div>
+      </div>
+    </sc-if>
+
+    <!-- ================= LOGIN ================= -->
+    <sc-if value="{{ isLogin }}" hint-placeholder-val="{{ false }}">
+      <div style="min-height:80vh;display:flex;align-items:center;justify-content:center">
+        <div style="width:min(364px,100%);background:#16160F;border:1px solid rgba(255,255,255,.1);border-radius:14px;box-shadow:0 28px 80px rgba(0,0,0,.55);padding:28px 26px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:22px">
+            <svg width="42" height="42" viewBox="0 0 42 42" style="display:block;filter:drop-shadow(0 2px 4px rgba(0,0,0,.4))">
+              <rect x="1.4" y="1.4" width="39.2" height="39.2" rx="11" fill="#FFCC00" stroke="#1a1a1a" stroke-width="1.5"></rect>
+              <text x="21" y="24.5" text-anchor="middle" font-family="'Space Mono',monospace" font-weight="700" font-size="7.5" letter-spacing="0.3" fill="#1a1a1a">YIFU-SNK</text>
+            </svg>
+            <div>
+              <div style="font:700 19px/1 Archivo,sans-serif;color:#EBEBE9">Sneaker OS</div>
+              <div style="font:400 9px/1 'Space Mono',monospace;letter-spacing:.16em;color:#8A8780;margin-top:4px;text-transform:uppercase">球鞋实战数据库 · v1</div>
+            </div>
+          </div>
+          <div style="font:700 8px/1 'Space Mono',monospace;letter-spacing:.16em;color:#E10600;text-transform:uppercase;margin-bottom:14px;padding-bottom:9px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between"><span>RESTRICTED</span><span style="color:#8A8780">登录访问</span></div>
+
+          <label style="font:700 8px/1 'Space Mono',monospace;letter-spacing:.12em;color:#8A8780;text-transform:uppercase;margin-bottom:6px;display:block">Email 邮箱</label>
+          <input value="{{ fLoginEmail }}" onChange="{{ onLoginEmail }}" type="email" autocomplete="username" placeholder="you@email.com" style="width:100%;box-sizing:border-box;background:#1f1e17;border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:9px 11px;font:400 12px/1.2 'Space Mono',monospace;color:#EBEBE9;outline:none;margin-bottom:13px" style-focus="border-color:#E10600">
+
+          <label style="font:700 8px/1 'Space Mono',monospace;letter-spacing:.12em;color:#8A8780;text-transform:uppercase;margin-bottom:6px;display:block">Password 密码</label>
+          <input value="{{ fLoginPw }}" onChange="{{ onLoginPw }}" onKeyDown="{{ onLoginKey }}" type="password" autocomplete="current-password" placeholder="••••••••" style="width:100%;box-sizing:border-box;background:#1f1e17;border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:9px 11px;font:400 12px/1.2 'Space Mono',monospace;color:#EBEBE9;outline:none" style-focus="border-color:#E10600">
+
+          <div style="min-height:16px;font:400 10.5px/1.4 'Space Mono',monospace;color:#FF2D3F;margin:9px 0 4px">{{ loginError }}</div>
+
+          <div onClick="{{ doLogin }}" style="cursor:pointer;text-align:center;padding:11px 16px;border-radius:8px;background:#E10600;color:#fff;font:700 11px/1 'Space Mono',monospace;letter-spacing:.06em" style-active="transform:translateY(1px)">{{ loginBtnLabel }}</div>
+          <div style="font:400 8.5px/1.5 'Space Mono',monospace;color:#6f6d5e;letter-spacing:.04em;margin-top:14px;text-align:center">private database · 仅限本人访问</div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ================= GRID VIEW ================= -->
+    <sc-if value="{{ isGrid }}" hint-placeholder-val="{{ false }}">
+      <div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:14px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <svg width="42" height="42" viewBox="0 0 42 42" style="display:block;filter:drop-shadow(0 2px 4px rgba(0,0,0,.4))">
+              <rect x="1.4" y="1.4" width="39.2" height="39.2" rx="11" fill="#FFCC00" stroke="#1a1a1a" stroke-width="1.5"></rect>
+              <text x="21" y="24.5" text-anchor="middle" font-family="'Space Mono',monospace" font-weight="700" font-size="7.5" letter-spacing="0.3" fill="#1a1a1a">YIFU-SNK</text>
+            </svg>
+            <div>
+              <div style="font:700 19px/1 Archivo,sans-serif;color:#EBEBE9">Sneaker OS</div>
+              <div style="font:400 9px/1 'Space Mono',monospace;letter-spacing:.16em;color:#8A8780;margin-top:4px;text-transform:uppercase">球鞋实战数据库 · v1</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:14px">
+            <div style="text-align:right"><div style="font:700 18px/1 'Space Mono',monospace;color:#EBEBE9">{{ count }}</div><div style="font:400 7px/1 'Space Mono',monospace;letter-spacing:.12em;color:#8A8780;margin-top:3px">PAIRS 双</div></div>
+            <div style="width:1px;height:28px;background:rgba(255,255,255,.14)"></div>
+            <div style="text-align:right"><div style="font:700 18px/1 'Space Mono',monospace;color:#EBEBE9">{{ totalHours }}</div><div style="font:400 7px/1 'Space Mono',monospace;letter-spacing:.12em;color:#8A8780;margin-top:3px">HOURS 时</div></div>
+            <div onClick="{{ openAdd }}" style="cursor:pointer;margin-left:6px;padding:10px 16px;border-radius:8px;background:#E10600;color:#fff;font:700 11px/1 'Space Mono',monospace;letter-spacing:.06em" style-active="transform:translateY(1px)">+ ADD ENTRY 添加</div>
+            <div onClick="{{ logout }}" title="Log out — 退出" style="cursor:pointer;padding:10px 13px;border-radius:8px;background:#26241d;border:1px solid rgba(255,255,255,.12);color:#9a9789;font:700 10px/1 'Space Mono',monospace;letter-spacing:.06em" style-active="transform:translateY(1px)">退出</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:18px">{{ filterChips }}</div>
+
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:26px">
+          <sc-for list="{{ cardShoes }}" as="s" hint-placeholder-count="6">
+            <div style="height:262px;-webkit-perspective:1200px;perspective:1200px">
+              <div style="position:relative;width:100%;height:100%;transition:transform .55s cubic-bezier(.4,.05,.2,1);-webkit-transform-style:preserve-3d;transform-style:preserve-3d;transform:{{ s.flipTransform }}">
+
+                <!-- FRONT -->
+                <div style="position:absolute;inset:0;-webkit-backface-visibility:hidden;backface-visibility:hidden;opacity:{{ s.frontVis }};transition:opacity .1s linear .25s;background:#F4F4F3;border:1px solid rgba(0,0,0,.1);border-radius:9px;padding:12px;display:flex;flex-direction:column;gap:9px">
+                  <div style="min-width:0">
+                    <div style="font:700 13px/1.15 Archivo,sans-serif;color:#1B1B18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.name }}</div>
+                    <div style="font:400 9px/1 'Space Mono',monospace;color:#8A8780;margin-top:4px;letter-spacing:.04em">{{ s.size }} · {{ s.courtStr }}</div>
+                  </div>
+
+                  <div style="display:flex;gap:8px;align-items:stretch">
+                    <div style="display:flex;flex-direction:column;gap:5px;flex:none;width:28px">
+                      <div onClick="{{ s.onUp }}" title="up — 上一项 / higher level" style="flex:1;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#33322c;font:700 10px/1 'Space Mono',monospace;background:linear-gradient(165deg,#fbfaf6,#c2c0b6);border:1px solid rgba(0,0,0,.3);box-shadow:inset 0 1px 0 rgba(255,255,255,.95),inset 0 -2px 3px rgba(0,0,0,.12),0 1px 2px rgba(0,0,0,.3)" style-active="box-shadow:inset 0 1px 4px rgba(0,0,0,.4);background:linear-gradient(165deg,#d6d4ca,#b0aea4)">▲</div>
+                      <div onClick="{{ s.onDown }}" title="down — 下一项 / lower level" style="flex:1;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#33322c;font:700 10px/1 'Space Mono',monospace;background:linear-gradient(165deg,#fbfaf6,#c2c0b6);border:1px solid rgba(0,0,0,.3);box-shadow:inset 0 1px 0 rgba(255,255,255,.95),inset 0 -2px 3px rgba(0,0,0,.12),0 1px 2px rgba(0,0,0,.3)" style-active="box-shadow:inset 0 1px 4px rgba(0,0,0,.4);background:linear-gradient(165deg,#d6d4ca,#b0aea4)">▼</div>
+                    </div>
+                    <div onClick="{{ s.onExpand }}" title="Click to unfold all 24 metrics — 展开全部 24 项指标" style="flex:1;cursor:pointer;background:#16160F;border-radius:7px;padding:9px 11px;display:flex;flex-direction:column;justify-content:center;gap:6px;box-shadow:inset 0 1px 4px rgba(0,0,0,.55)" style-hover="box-shadow:inset 0 1px 4px rgba(0,0,0,.55),0 0 0 1.5px rgba(225,6,0,.55)">
+                      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:6px">
+                        <div style="font:700 27px/0.85 'Space Mono',monospace;color:{{ s.metricColor }};letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.metricVal }}</div>
+                        <div style="flex:none;display:flex;align-items:center;gap:5px"><span style="font:400 7px/1 'Space Mono',monospace;color:#6f6d5e;letter-spacing:.1em">{{ s.idxLabel }}</span><span style="font:700 9px/1 'Space Mono',monospace;color:#FF2D3F">⊞</span></div>
+                      </div>
+                      <div style="font:400 6.5px/1 'Space Mono',monospace;color:#9b998a;letter-spacing:.14em">{{ s.metricEn }} · {{ s.metricZh }}</div>
+                      <div style="margin-top:1px">{{ s.batteryEl }}</div>
+                    </div>
+                  </div>
+
+                  <div style="display:flex;justify-content:space-around;align-items:flex-start">
+                    <sc-for list="{{ s.gauges }}" as="g" hint-placeholder-count="3">
+                      <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+                        <div style="position:relative;width:50px;height:50px">
+                          {{ g.gaugeEl }}
+                          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:700 11px/1 'Space Mono',monospace;color:#1B1B18">{{ g.disp }}</div>
+                        </div>
+                        <div style="font:400 6.5px/1.3 'Space Mono',monospace;letter-spacing:.05em;color:#8A8780;text-align:center">{{ g.en }}<br>{{ g.zh }}</div>
+                      </div>
+                    </sc-for>
+                  </div>
+
+                  <div style="margin-top:auto;display:flex;align-items:center;justify-content:space-between;border-top:1px solid rgba(0,0,0,.08);padding-top:9px">
+                    <div>{{ s.statusPill }}</div>
+                    <div style="display:flex;gap:6px">
+                      <div onClick="{{ s.onEdit }}" style="cursor:pointer;padding:4px 9px;border-radius:5px;background:#EBEBE9;border:1px solid rgba(0,0,0,.14);font:700 8px/1 'Space Mono',monospace;letter-spacing:.08em;color:#5A584F" style-active="transform:translateY(1px)">EDIT 改</div>
+                      <div onClick="{{ s.onFlip }}" style="cursor:pointer;padding:4px 9px;border-radius:5px;background:#16160F;font:700 8px/1 'Space Mono',monospace;letter-spacing:.08em;color:#FF2D3F" style-active="transform:translateY(1px)">NOTES ↻</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- BACK -->
+                <div style="position:absolute;inset:0;-webkit-backface-visibility:hidden;backface-visibility:hidden;opacity:{{ s.backVis }};transition:opacity .1s linear .25s;transform:rotateY(180deg);background:#16160F;border:1px solid rgba(0,0,0,.3);border-radius:9px;padding:13px;display:flex;flex-direction:column">
+                  <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+                    <div style="font:700 12px/1.1 Archivo,sans-serif;color:#FF2D3F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.name }}</div>
+                    <div onClick="{{ s.onFlip }}" style="flex:none;cursor:pointer;font:700 8px/1 'Space Mono',monospace;letter-spacing:.1em;color:#9a9789">↩ BACK</div>
+                  </div>
+                  <div style="font:400 7px/1 'Space Mono',monospace;color:#6f6d5e;letter-spacing:.18em;margin:11px 0 7px">NOTES · 笔记</div>
+                  <div style="flex:1;overflow:auto;font:400 11.5px/1.6 'Noto Sans SC',sans-serif;color:#cfcdbf">{{ s.notes }}</div>
+                  <sc-if value="{{ s.hasPoints }}" hint-placeholder-val="{{ false }}">
+                    <div style="margin-top:9px;padding-top:9px;border-top:1px solid rgba(255,255,255,.1);font:400 9.5px/1.5 'Space Mono',monospace;color:#8f8d7c;white-space:pre-line;max-height:64px;overflow:auto">{{ s.pointsLog }}</div>
+                  </sc-if>
+                </div>
+
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <!-- ============ EXPANDED 24-METRIC OVERLAY ============ -->
+        <sc-if value="{{ hasExpanded }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ closeExpand }}" style="position:fixed;inset:0;z-index:60;background:rgba(8,8,6,.74);-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;padding:32px">
+            <div onClick="{{ stopProp }}" style="width:min(720px,100%);max-height:88vh;display:flex;flex-direction:column;background:#16160F;border:1px solid rgba(255,255,255,.14);border-radius:14px;box-shadow:0 28px 80px rgba(0,0,0,.6);overflow:hidden">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 22px;border-bottom:1px solid rgba(255,255,255,.1)">
+                <div style="min-width:0">
+                  <div style="font:700 16px/1.15 Archivo,sans-serif;color:#EBEBE9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ expName }}</div>
+                  <div style="font:400 8px/1 'Space Mono',monospace;letter-spacing:.18em;color:#8A8780;margin-top:5px;text-transform:uppercase">ALL 24 METRICS · 全部指标</div>
+                </div>
+                <div onClick="{{ closeExpand }}" style="flex:none;cursor:pointer;width:30px;height:30px;border-radius:8px;background:#26241d;border:1px solid rgba(255,255,255,.12);color:#cfcdbf;font:700 13px/30px 'Space Mono',monospace;text-align:center" style-active="transform:translateY(1px)">✕</div>
+              </div>
+              <div style="overflow:auto;padding:14px 16px;display:grid;grid-template-columns:1fr 1fr;gap:8px 14px">
+                <sc-for list="{{ expItems }}" as="m" hint-placeholder-count="24">
+                  <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.05)">
+                    <div style="flex:none;width:18px;font:400 8px/1 'Space Mono',monospace;color:#6f6d5e">{{ m.num }}</div>
+                    <div style="flex:1;min-width:0">
+                      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+                        <div style="font:700 8.5px/1 'Space Mono',monospace;letter-spacing:.07em;color:#9b998a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.en }} · {{ m.zh }}</div>
+                        <div style="flex:none;font:700 14px/1 'Space Mono',monospace;color:{{ m.color }}">{{ m.val }}</div>
+                      </div>
+                      <div style="margin-top:6px">{{ m.batteryEl }}</div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <!-- ================= FORM VIEW ================= -->
+    <sc-if value="{{ isForm }}" hint-placeholder-val="{{ false }}">
+      <div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:12px">
+          <div style="display:flex;align-items:center;gap:13px">
+            <div onClick="{{ cancelForm }}" style="cursor:pointer;width:34px;height:34px;border-radius:8px;background:#26241d;border:1px solid rgba(255,255,255,.12);color:#EBEBE9;font:700 14px/34px 'Space Mono',monospace;text-align:center" style-active="transform:translateY(1px)">←</div>
+            <div>
+              <div style="font:700 19px/1 Archivo,sans-serif;color:#EBEBE9">{{ formTitle }}</div>
+              <div style="font:400 9px/1 'Space Mono',monospace;letter-spacing:.14em;color:#8A8780;margin-top:4px">{{ formSubtitle }}</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <sc-if value="{{ isEditing }}" hint-placeholder-val="{{ false }}">
+              <div onClick="{{ deleteShoe }}" style="cursor:pointer;padding:10px 14px;border-radius:8px;background:#26241d;border:1px solid rgba(225,6,0,.5);color:#E10600;font:700 10px/1 'Space Mono',monospace;letter-spacing:.06em" style-active="transform:translateY(1px)">DELETE 删除</div>
+            </sc-if>
+            <div onClick="{{ cancelForm }}" style="cursor:pointer;padding:10px 16px;border-radius:8px;background:#26241d;border:1px solid rgba(255,255,255,.12);color:#cfcdbf;font:700 10px/1 'Space Mono',monospace;letter-spacing:.06em" style-active="transform:translateY(1px)">CANCEL 取消</div>
+            <div onClick="{{ commitForm }}" style="cursor:pointer;padding:10px 22px;border-radius:8px;background:#E10600;color:#fff;font:700 11px/1 'Space Mono',monospace;letter-spacing:.06em" style-active="transform:translateY(1px)">{{ saveLabel }}</div>
+          </div>
+        </div>
+
+        <div style="background:#E9E9E6;border:1px solid rgba(0,0,0,.16);border-radius:13px;padding:24px">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px">
+
+            <!-- IDENTITY -->
+            <div>
+              <div style="font:700 9px/1 'Space Mono',monospace;letter-spacing:.16em;color:#E10600;text-transform:uppercase;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid rgba(0,0,0,.12);display:flex;justify-content:space-between"><span>IDENTITY</span><span style="color:#8A8780">标识</span></div>
+
+              <div style="margin-bottom:11px">
+                <label style="font:700 8px/1 'Space Mono',monospace;letter-spacing:.12em;color:#8A8780;text-transform:uppercase;margin-bottom:5px;display:block">Name 名称</label>
+                <input value="{{ fName }}" onChange="{{ onName }}" placeholder="e.g. Kobe VI Dodger" style="width:100%;box-sizing:border-box;background:#F3F3F1;border:1px solid rgba(0,0,0,.18);border-radius:6px;padding:8px 10px;font:400 12px/1.2 'Space Mono',monospace;color:#1B1B18;outline:none" style-focus="border-color:#E10600">
+              </div>
+
+              <div style="margin-bottom:11px">
+                <label style="font:700 8px/1 'Space Mono',monospace;letter-spacing:.12em;color:#8A8780;text-transform:uppercase;margin-bottom:6px;display:block">Status 状态</label>
+                {{ statusRow }}
+              </div>
+
+              <div style="margin-bottom:11px">
+                <label style="font:700 8px/1 'Space Mono',monospace;letter-spacing:.12em;color:#8A8780;text-transform:uppercase;margin-bottom:6px;display:block">Court 场地</label>
+                {{ courtRow }}
+              </div>
+
+              <div style="display:flex;gap:9px;margin-bottom:11px">
+                <div style="flex:1">
+                  <label style="font:700 8px/1 'Space Mono',monospace;letter-spacing:.12em;color:#8A8780;text-transform:uppercase;margin-bottom:5px;display:block">Size 尺码</label>
+                  <input value="{{ fSize }}" onChange="{{ onSize }}" placeholder="42 US9" style="width:100%;box-sizing:border-box;background:#F3F3F1;border:1px solid rgba(0,0,0,.18);border-radius:6px;padding:8px 10px;font:400 12px/1.2 'Space Mono',monospace;color:#1B1B18;outline:none" style-focus="border-color:#E10600">
+                </div>
+                <div style="flex:1">
+                  <label style="font:700 8px/1 'Space Mono',monospace;letter-spacing:.12em;color:#8A8780;text-transform:uppercase;margin-bottom:5px;display:block">Purchased 购入</label>
+                  <input value="{{ fDate }}" onChange="{{ onDate }}" placeholder="dd/mm/yyyy" style="width:100%;box-sizing:border-box;background:#F3F3F1;border:1px solid rgba(0,0,0,.18);border-radius:6px;padding:8px 10px;font:400 12px/1.2 'Space Mono',monospace;color:#1B1B18;outline:none" style-focus="border-color:#E10600">
+                </div>
+              </div>
+
+              <div style="display:flex;gap:9px">
+                <div style="flex:1">
+                  <label style="font:700 8px/1 'Space Mono',monospace;letter-spacing:.12em;color:#8A8780;text-transform:uppercase;margin-bottom:5px;display:block">Price £ 价格</label>
+                  <input value="{{ fPrice }}" onChange="{{ onPrice }}" type="number" placeholder="0" style="width:100%;box-sizing:border-box;background:#F3F3F1;border:1px solid rgba(0,0,0,.18);border-radius:6px;padding:8px 10px;font:400 12px/1.2 'Space Mono',monospace;color:#1B1B18;outline:none" style-focus="border-color:#E10600">
+                </div>
+                <div style="flex:1">
+                  <label style="font:700 8px/1 'Space Mono',monospace;letter-spacing:.12em;color:#8A8780;text-transform:uppercase;margin-bottom:5px;display:block">Weight g 重量</label>
+                  <input value="{{ fWeight }}" onChange="{{ onWeight }}" type="number" placeholder="0" style="width:100%;box-sizing:border-box;background:#F3F3F1;border:1px solid rgba(0,0,0,.18);border-radius:6px;padding:8px 10px;font:400 12px/1.2 'Space Mono',monospace;color:#1B1B18;outline:none" style-focus="border-color:#E10600">
+                </div>
+              </div>
+            </div>
+
+            <!-- USAGE -->
+            <div>
+              <div style="font:700 9px/1 'Space Mono',monospace;letter-spacing:.16em;color:#E10600;text-transform:uppercase;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid rgba(0,0,0,.12);display:flex;justify-content:space-between"><span>USAGE</span><span style="color:#8A8780">使用</span></div>
+
+              <label style="font:700 8px/1 'Space Mono',monospace;letter-spacing:.12em;color:#8A8780;text-transform:uppercase;margin-bottom:6px;display:block">Hours by court 时长（小时）</label>
+              <div style="display:flex;gap:9px;margin-bottom:11px">
+                <div style="flex:1">
+                  <input value="{{ fGym }}" onChange="{{ onGym }}" type="number" placeholder="0" style="width:100%;box-sizing:border-box;background:#F3F3F1;border:1px solid rgba(0,0,0,.18);border-radius:6px;padding:8px 10px;font:400 12px/1.2 'Space Mono',monospace;color:#1B1B18;outline:none" style-focus="border-color:#E10600">
+                  <div style="font:400 7px/1 'Space Mono',monospace;color:#8A8780;text-align:center;margin-top:4px;letter-spacing:.06em">GYM 健身</div>
+                </div>
+                <div style="flex:1">
+                  <input value="{{ fIndoor }}" onChange="{{ onIndoor }}" type="number" placeholder="0" style="width:100%;box-sizing:border-box;background:#F3F3F1;border:1px solid rgba(0,0,0,.18);border-radius:6px;padding:8px 10px;font:400 12px/1.2 'Space Mono',monospace;color:#1B1B18;outline:none" style-focus="border-color:#E10600">
+                  <div style="font:400 7px/1 'Space Mono',monospace;color:#8A8780;text-align:center;margin-top:4px;letter-spacing:.06em">INDOOR 内场</div>
+                </div>
+                <div style="flex:1">
+                  <input value="{{ fOutdoor }}" onChange="{{ onOutdoor }}" type="number" placeholder="0" style="width:100%;box-sizing:border-box;background:#F3F3F1;border:1px solid rgba(0,0,0,.18);border-radius:6px;padding:8px 10px;font:400 12px/1.2 'Space Mono',monospace;color:#1B1B18;outline:none" style-focus="border-color:#E10600">
+                  <div style="font:400 7px/1 'Space Mono',monospace;color:#8A8780;text-align:center;margin-top:4px;letter-spacing:.06em">OUTDOOR 外场</div>
+                </div>
+              </div>
+
+              <div style="display:flex;gap:9px;margin-bottom:11px">
+                <div style="flex:1">
+                  <label style="font:700 8px/1 'Space Mono',monospace;letter-spacing:.12em;color:#8A8780;text-transform:uppercase;margin-bottom:5px;display:block">Games 场次</label>
+                  <input value="{{ fGames }}" onChange="{{ onGames }}" type="number" placeholder="0" style="width:100%;box-sizing:border-box;background:#F3F3F1;border:1px solid rgba(0,0,0,.18);border-radius:6px;padding:8px 10px;font:400 12px/1.2 'Space Mono',monospace;color:#1B1B18;outline:none" style-focus="border-color:#E10600">
+                </div>
+                <div style="flex:1">
+                  <label style="font:700 8px/1 'Space Mono',monospace;letter-spacing:.12em;color:#8A8780;text-transform:uppercase;margin-bottom:5px;display:block">Pref before 购前</label>
+                  <input value="{{ fPrefBefore }}" onChange="{{ onPrefBefore }}" type="number" placeholder="0–11" style="width:100%;box-sizing:border-box;background:#F3F3F1;border:1px solid rgba(0,0,0,.18);border-radius:6px;padding:8px 10px;font:400 12px/1.2 'Space Mono',monospace;color:#1B1B18;outline:none" style-focus="border-color:#E10600">
+                </div>
+                <div style="flex:1">
+                  <label style="font:700 8px/1 'Space Mono',monospace;letter-spacing:.12em;color:#8A8780;text-transform:uppercase;margin-bottom:5px;display:block">Pref after 用后</label>
+                  <input value="{{ fPrefAfter }}" onChange="{{ onPrefAfter }}" type="number" placeholder="0–11" style="width:100%;box-sizing:border-box;background:#F3F3F1;border:1px solid rgba(0,0,0,.18);border-radius:6px;padding:8px 10px;font:400 12px/1.2 'Space Mono',monospace;color:#1B1B18;outline:none" style-focus="border-color:#E10600">
+                </div>
+              </div>
+
+              <label style="font:700 8px/1 'Space Mono',monospace;letter-spacing:.12em;color:#8A8780;text-transform:uppercase;margin-bottom:5px;display:block">Points log 得分记录</label>
+              <textarea value="{{ fPoints }}" onChange="{{ onPoints }}" placeholder="vs. LSE - 8pts" style="width:100%;box-sizing:border-box;min-height:122px;background:#F3F3F1;border:1px solid rgba(0,0,0,.18);border-radius:6px;padding:9px 10px;font:400 11px/1.5 'Space Mono',monospace;color:#1B1B18;outline:none" style-focus="border-color:#E10600"></textarea>
+            </div>
+
+            <!-- FEEL RATINGS -->
+            <div>
+              <div style="font:700 9px/1 'Space Mono',monospace;letter-spacing:.16em;color:#E10600;text-transform:uppercase;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid rgba(0,0,0,.12);display:flex;justify-content:space-between"><span>FEEL RATINGS · 0–10</span><span style="color:#8A8780">实战评分</span></div>
+              <sc-for list="{{ formAxes }}" as="ax" hint-placeholder-count="9">
+                <div style="margin-bottom:10px">
+                  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
+                    <span style="font:600 11px/1 Archivo,sans-serif;color:#1B1B18">{{ ax.zh }} <span style="font:400 8px/1 'Space Mono',monospace;color:#8A8780;letter-spacing:.06em">{{ ax.en }}</span></span>
+                    <span style="font:700 12px/1 'Space Mono',monospace;color:#E10600">{{ ax.valLabel }}</span>
+                  </div>
+                  <div style="display:flex;gap:3px">
+                    <sc-for list="{{ ax.cells }}" as="c" hint-placeholder-count="10">{{ c }}</sc-for>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="height:1px;background:rgba(0,0,0,.12);margin:22px 0"></div>
+
+          <div style="display:grid;grid-template-columns:300px 1fr;gap:28px">
+            <!-- LIVE PREVIEW + DERIVED -->
+            <div>
+              <div style="font:700 9px/1 'Space Mono',monospace;letter-spacing:.16em;color:#E10600;text-transform:uppercase;margin-bottom:12px;display:flex;justify-content:space-between"><span>LIVE PREVIEW</span><span style="color:#8A8780">实时</span></div>
+              <div style="display:flex;justify-content:center;margin-bottom:14px">{{ radarForm }}</div>
+
+              <div style="margin-bottom:12px">
+                <label style="font:700 8px/1 'Space Mono',monospace;letter-spacing:.12em;color:#8A8780;text-transform:uppercase;margin-bottom:5px;display:block">Perf override 手填实战 (optional)</label>
+                <input value="{{ fPerf }}" onChange="{{ onPerf }}" type="number" placeholder="{{ dPerfAuto }} (auto avg)" style="width:100%;box-sizing:border-box;background:#F3F3F1;border:1px solid rgba(0,0,0,.18);border-radius:6px;padding:8px 10px;font:400 12px/1.2 'Space Mono',monospace;color:#1B1B18;outline:none" style-focus="border-color:#E10600">
+              </div>
+
+              <div style="background:#16160F;border-radius:9px;padding:13px 15px">
+                <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:11px">
+                  <div style="font:700 32px/0.85 'Space Mono',monospace;color:#FF2D3F">{{ dPerf }}</div>
+                  <div style="font:400 6.5px/1 'Space Mono',monospace;color:#6f6d5e;letter-spacing:.14em;text-align:right">PERFORMANCE<br>实战指标</div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px 14px">
+                  <div><div style="font:400 6.5px/1 'Space Mono',monospace;color:#6f6d5e;letter-spacing:.1em">VALUE 性价比</div><div style="font:700 13px/1 'Space Mono',monospace;color:#cfcdbf;margin-top:3px">{{ dValue }}</div></div>
+                  <div><div style="font:400 6.5px/1 'Space Mono',monospace;color:#6f6d5e;letter-spacing:.1em">£/HR 单价</div><div style="font:700 13px/1 'Space Mono',monospace;color:#cfcdbf;margin-top:3px">{{ dUnit }}</div></div>
+                  <div><div style="font:400 6.5px/1 'Space Mono',monospace;color:#6f6d5e;letter-spacing:.1em">TOTAL 总时长</div><div style="font:700 13px/1 'Space Mono',monospace;color:#cfcdbf;margin-top:3px">{{ dTotal }}</div></div>
+                  <div><div style="font:400 6.5px/1 'Space Mono',monospace;color:#6f6d5e;letter-spacing:.1em">LIFE 寿命</div><div style="font:700 13px/1 'Space Mono',monospace;color:#cfcdbf;margin-top:3px">{{ dLife }}</div></div>
+                  <div><div style="font:400 6.5px/1 'Space Mono',monospace;color:#6f6d5e;letter-spacing:.1em">USE 使用率</div><div style="font:700 13px/1 'Space Mono',monospace;color:#cfcdbf;margin-top:3px">{{ dUse }}</div></div>
+                  <div><div style="font:400 6.5px/1 'Space Mono',monospace;color:#6f6d5e;letter-spacing:.1em">WT% 重量占比</div><div style="font:700 13px/1 'Space Mono',monospace;color:#cfcdbf;margin-top:3px">{{ dWeightPct }}</div></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- NOTES -->
+            <div>
+              <div style="font:700 9px/1 'Space Mono',monospace;letter-spacing:.16em;color:#E10600;text-transform:uppercase;margin-bottom:12px;display:flex;justify-content:space-between"><span>NOTES</span><span style="color:#8A8780">笔记</span></div>
+              <textarea value="{{ fNotes }}" onChange="{{ onNotes }}" placeholder="脚感、鞋楦、缓震、磨合、抓地…  Cushioning, fit, traction, break-in notes…" style="width:100%;box-sizing:border-box;min-height:312px;background:#F3F3F1;border:1px solid rgba(0,0,0,.18);border-radius:6px;padding:12px 13px;font:400 12.5px/1.65 'Noto Sans SC',sans-serif;color:#1B1B18;outline:none" style-focus="border-color:#E10600"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{}">
 const SB_URL = 'https://rlawekkjrimefpapwyeu.supabase.co';
 const SB_KEY = 'sb_publishable_anLXH2V7gSkuFXnqoDEk0Q_WStKxJ2T';
-const sb = supabase.createClient(SB_URL, SB_KEY);
-
-// ---- field + column definitions -------------------------------------------
-const GROUPS = [
-  {h:'Identity', f:[['name','Name','text'],['status','Status','text'],['court_type','Court','text'],['size','Size','text'],['purchase_date','Purchase date','text'],['position','Order #','number']]},
-  {h:'Usage', f:[['total_hours','Total hours','number'],['gym_hours','Gym h','number'],['indoor_hours','Indoor h','number'],['outdoor_hours','Outdoor h','number'],['games','Games','number'],['use_rate','Use rate %','number'],['lifespan_pct','Lifespan %','number'],['owned_days','Owned days','number']]},
-  {h:'Ratings', f:[['performance_score','Performance','number'],['grip','Grip','number'],['fit_match','Fit match','number'],['startup_feedback','Startup feedback','number'],['low_cog','Low CoG','number'],['forefoot_cushion','Forefoot cushion','number'],['heel_cushion','Heel cushion','number'],['midsole_stability','Midsole stability','number'],['comfort','Comfort','number'],['foot_health','Foot health','number'],['weight_pct','Weight %','number'],['weight_g','Weight (g)','number']]},
-  {h:'Value', f:[['price_bought','Price (£)','number'],['unit_price','Unit price (£)','number'],['cost_performance','Cost-perf','number'],['pref_difference','Pref Δ %','number'],['pref_before','Pref before','number'],['pref_after','Pref after','number']]},
-  {h:'Notes', f:[['score_log','Match log','textarea'],['description','Description','textarea']]},
+const AXES = [
+  {key:"footHealth", zh:"足部健康", en:"Foot Health"},
+  {key:"grip", zh:"抓地", en:"Traction"},
+  {key:"fit", zh:"鞋楦匹配", en:"Last Fit"},
+  {key:"response", zh:"启动反馈", en:"Response"},
+  {key:"lowProfile", zh:"低重心", en:"Low Profile"},
+  {key:"foreCushion", zh:"前掌缓震", en:"Fore Cushion"},
+  {key:"heelCushion", zh:"后掌缓震", en:"Heel Cushion"},
+  {key:"transition", zh:"中底过渡", en:"Transition"},
+  {key:"comfort", zh:"舒适度", en:"Comfort"}
 ];
-const ALLFIELDS = GROUPS.flatMap(g=>g.f);
-const NUMERIC = new Set(ALLFIELDS.filter(f=>f[2]==='number').map(f=>f[0]));
-const TABLE_COLS = [
-  ['position','#','idx'],['name','Sneaker','text'],['status','Status','pill'],
-  ['court_type','Court','court'],['performance_score','Perf','score'],
-  ['total_hours','Hours','num'],['games','Games','num'],['use_rate','Use %','num'],
-  ['price_bought','£','num'],['size','Size','text'],
-];
-
-let state = {rows:[], sortKey:'position', sortDir:1, user:null};
-
-// ---- helpers --------------------------------------------------------------
-const $ = id => document.getElementById(id);
-function toast(msg, bad){ const t=$('toast'); t.textContent=msg; t.className='show'+(bad?' bad':''); setTimeout(()=>t.className='',2600); }
-function pillClass(s){ if(!s) return 'none'; const l=s.toLowerCase(); if(l.includes('roster'))return'roster'; if(l.includes('retire'))return'retired'; if(l.includes('out'))return'out'; if(l.includes('sold')||l.includes('return'))return'sold'; return 'none'; }
-function fmtNum(v){ if(v===null||v===undefined||v==='')return''; const n=Number(v); if(!isFinite(n))return''; return (Math.round(n*100)/100).toLocaleString(); }
-
-// ---- auth -----------------------------------------------------------------
-async function refreshUser(){
-  const {data} = await sb.auth.getSession();
-  state.user = data.session ? data.session.user : null;
-  updateAuthUI();
+function nz(v){ return (v === undefined || v === '' || (typeof v === 'number' && isNaN(v))) ? null : v; }
+// Supabase row -> internal shoe shape (the names the render logic expects)
+function fromDb(r){
+  const court = r.court_type || '';
+  return {
+    id: r.id, position: r.position,
+    name: r.name || '', status: r.status || '',
+    courtRaw: court, indoor: court.indexOf('内场') >= 0, outdoor: court.indexOf('外场') >= 0,
+    size: r.size || '', purchaseDate: r.purchase_date || '',
+    price: r.price_bought, weightG: r.weight_g,
+    gym: r.gym_hours || 0, indoorHrs: r.indoor_hours || 0, outdoorHrs: r.outdoor_hours || 0,
+    games: r.games || 0, pointsLog: r.score_log || '', desc: r.description || '',
+    prefBefore: r.pref_before, prefAfter: r.pref_after,
+    footHealth: r.foot_health, grip: r.grip, fit: r.fit_match, response: r.startup_feedback,
+    lowProfile: r.low_cog, foreCushion: r.forefoot_cushion, heelCushion: r.heel_cushion,
+    transition: r.midsole_stability, comfort: r.comfort,
+    perf: r.performance_score, value: r.cost_performance, unitPrice: r.unit_price,
+    lifespan: r.lifespan_pct, weightPct: r.weight_pct, ownedDays: r.owned_days,
+    prefDiff: r.pref_difference, totalHours: r.total_hours || 0, useRate: r.use_rate || 0
+  };
 }
-function updateAuthUI(){
-  const on = !!state.user;
-  $('addBtn').style.display = on ? '' : 'none';
-  $('authBtn').textContent = on ? 'Log out' : 'Log in';
-  $('subtitle').textContent = on ? ('editing as ' + state.user.email) : 'basketball shoe roster';
-}
-$('authBtn').onclick = async ()=>{
-  if(state.user){ await sb.auth.signOut(); await refreshUser(); toast('Logged out'); }
-  else openLogin();
-};
-function openLogin(){ $('loginErr').textContent=''; $('loginOverlay').classList.add('show'); $('email').focus(); }
-function closeLogin(){ $('loginOverlay').classList.remove('show'); }
-$('loginSubmit').onclick = async ()=>{
-  const email=$('email').value.trim(), password=$('password').value;
-  if(!email||!password){ $('loginErr').textContent='Enter email and password.'; return; }
-  $('loginSubmit').disabled=true; $('loginErr').textContent='';
-  const {error} = await sb.auth.signInWithPassword({email,password});
-  $('loginSubmit').disabled=false;
-  if(error){ $('loginErr').textContent = error.message; return; }
-  closeLogin(); $('password').value=''; await refreshUser(); toast('Welcome back'); render();
-};
-$('password').addEventListener('keydown',e=>{ if(e.key==='Enter') $('loginSubmit').click(); });
-
-// ---- data -----------------------------------------------------------------
-async function load(){
-  const {data,error} = await sb.from('sneakers').select('*').order('position',{ascending:true});
-  if(error){ toast('Load failed: '+error.message,true); return; }
-  state.rows = data || [];
-  buildFilters(); renderStats(); render();
-}
-function buildFilters(){
-  const st=[...new Set(state.rows.map(r=>r.status).filter(Boolean))].sort();
-  const ct=[...new Set(state.rows.map(r=>r.court_type).filter(Boolean))].sort();
-  $('statusFilter').innerHTML='<option value="">All status</option>'+st.map(s=>`<option>${s}</option>`).join('');
-  $('courtFilter').innerHTML='<option value="">All courts</option>'+ct.map(s=>`<option>${s}</option>`).join('');
-}
-function renderStats(){
-  const r=state.rows;
-  const hours=r.reduce((a,x)=>a+(Number(x.total_hours)||0),0);
-  const spend=r.reduce((a,x)=>a+(Number(x.price_bought)||0),0);
-  const games=r.reduce((a,x)=>a+(Number(x.games)||0),0);
-  const active=r.filter(x=>(x.status||'').toLowerCase().includes('roster')).length;
-  const cards=[['Pairs',r.length],['On roster',active],['Total hours',Math.round(hours).toLocaleString()],['Games',games],['Spent','£'+Math.round(spend).toLocaleString()]];
-  $('stats').innerHTML=cards.map(c=>`<div class="stat"><div class="n">${c[1]}</div><div class="l">${c[0]}</div></div>`).join('');
+// internal shoe shape -> Supabase row
+function toDb(s){
+  return {
+    position: s.position, status: s.status || null, court_type: s.courtRaw || null, name: s.name,
+    performance_score: nz(s.perf), pref_difference: nz(s.prefDiff), lifespan_pct: nz(s.lifespan),
+    gym_hours: nz(s.gym), outdoor_hours: nz(s.outdoorHrs), indoor_hours: nz(s.indoorHrs),
+    games: nz(s.games), score_log: s.pointsLog || null, description: s.desc || null,
+    weight_pct: nz(s.weightPct), foot_health: nz(s.footHealth), grip: nz(s.grip), fit_match: nz(s.fit),
+    startup_feedback: nz(s.response), low_cog: nz(s.lowProfile), forefoot_cushion: nz(s.foreCushion),
+    heel_cushion: nz(s.heelCushion), midsole_stability: nz(s.transition), comfort: nz(s.comfort),
+    total_hours: nz(s.totalHours), weight_g: nz(s.weightG), purchase_date: s.purchaseDate || null,
+    owned_days: nz(s.ownedDays), price_bought: nz(s.price), unit_price: nz(s.unitPrice),
+    size: s.size || null, cost_performance: nz(s.value), pref_before: nz(s.prefBefore),
+    pref_after: nz(s.prefAfter), use_rate: nz(s.useRate)
+  };
 }
 
-// ---- render table ---------------------------------------------------------
-function render(){
-  const q=$('search').value.trim().toLowerCase();
-  const sf=$('statusFilter').value, cf=$('courtFilter').value;
-  let rows=state.rows.filter(r=>{
-    if(sf && r.status!==sf) return false;
-    if(cf && r.court_type!==cf) return false;
-    if(q){ const hay=[r.name,r.description,r.score_log,r.status,r.size].map(x=>(x||'').toLowerCase()).join(' '); if(!hay.includes(q)) return false; }
-    return true;
-  });
-  const k=state.sortKey, d=state.sortDir;
-  rows.sort((a,b)=>{
-    let x=a[k], y=b[k];
-    const xn=(x===null||x===undefined||x===''), yn=(y===null||y===undefined||y==='');
-    if(xn&&yn)return 0; if(xn)return 1; if(yn)return -1;        // nulls last
-    if(NUMERIC.has(k)||k==='position'){ x=Number(x); y=Number(y); }
-    else { x=(''+x).toLowerCase(); y=(''+y).toLowerCase(); }
-    return x<y?-1*d : x>y?1*d : 0;
-  });
+class Component extends DCLogic {
+  state = { booting: true, authed: false, ready: false, data: [], view: 'grid', editingId: null, filter: 'ALL', metricIdx: {}, flipped: {}, expandedId: null, form: {}, saving: false, loginEmail: '', loginPw: '', loginError: '', loginBusy: false };
 
-  $('head').innerHTML = TABLE_COLS.map(c=>{
-    const isNum=['idx','num','score'].includes(c[2]);
-    const arr = state.sortKey===c[0] ? `<span class="arr">${state.sortDir>0?'▲':'▼'}</span>` : '';
-    return `<th class="${isNum?'num':''}" data-k="${c[0]}">${c[1]} ${arr}</th>`;
-  }).join('');
-  $('head').querySelectorAll('th').forEach(th=>th.onclick=()=>{
-    const key=th.dataset.k;
-    if(state.sortKey===key) state.sortDir*=-1; else { state.sortKey=key; state.sortDir=1; }
-    render();
-  });
-
-  const tb=$('rows'); tb.innerHTML='';
-  rows.forEach(r=>{
-    const tr=document.createElement('tr');
-    tr.onclick=()=>openDetail(r);
-    TABLE_COLS.forEach(c=>{
-      const td=document.createElement('td'); const v=r[c[0]];
-      if(c[2]==='pill'){ const p=document.createElement('span'); p.className='pill '+pillClass(v); p.textContent=v||'—'; td.appendChild(p); }
-      else if(c[2]==='score'){ td.className='num';
-        if(v===null||v===''||v===undefined){ td.textContent='—'; }
-        else{ const pct=Math.max(0,Math.min(100,(Number(v)/10)*100));
-          td.innerHTML=`<span class="score"><span>${fmtNum(v)}</span><span class="bar"><i style="width:${pct}%"></i></span></span>`; } }
-      else if(c[2]==='num'){ td.className='num'; td.textContent=fmtNum(v); }
-      else if(c[2]==='idx'){ td.className='num'; td.innerHTML=`<span class="idx">${v??''}</span>`; }
-      else if(c[2]==='court'){ td.innerHTML=`<span class="court">${v||''}</span>`; }
-      else if(c[0]==='name'){ td.className='name'; td.textContent=v||'(unnamed)'; }
-      else { td.textContent=v??''; }
-      tr.appendChild(td);
+  async componentDidMount() {
+    this.axes = AXES; this.axisKeys = AXES.map(a => a.key);
+    for (let i = 0; i < 200 && !(window.supabase && window.supabase.createClient); i++) await new Promise(r => setTimeout(r, 40));
+    if (!(window.supabase && window.supabase.createClient)) { console.error('supabase-js failed to load'); this.setState({ booting: false }); return; }
+    this.sb = window.supabase.createClient(SB_URL, SB_KEY);
+    try {
+      const { data } = await this.sb.auth.getSession();
+      if (data && data.session) { this.setState({ authed: true }); await this.loadData(); }
+    } catch (e) { console.error(e); }
+    this.sb.auth.onAuthStateChange((_ev, session) => {
+      const was = this.state.authed, now = !!session;
+      if (now && !was) { this.setState({ authed: true }); this.loadData(); }
+      else if (!now && was) { this.setState({ authed: false, ready: false, data: [], view: 'grid', expandedId: null, flipped: {} }); }
     });
-    tb.appendChild(tr);
-  });
-  $('empty').style.display = rows.length ? 'none' : 'block';
-}
-$('search').addEventListener('input',render);
-$('statusFilter').addEventListener('change',render);
-$('courtFilter').addEventListener('change',render);
+    this.setState({ booting: false });
+  }
 
-// ---- detail / edit --------------------------------------------------------
-let editing=null;
-function openDetail(row){
-  editing = row ? {...row} : {};
-  const isNew = !row;
-  const canEdit = !!state.user;
-  $('detailTitle').textContent = isNew ? 'New sneaker' : (row.name||'Sneaker');
-  const body=$('detailBody'); body.innerHTML='';
-  GROUPS.forEach(g=>{
-    const wrap=document.createElement('div'); wrap.className='grp';
-    wrap.innerHTML=`<h3>${g.h}</h3>`;
-    const grid=document.createElement('div'); grid.className='fields'+(g.h==='Notes'?' notes':'');
-    g.f.forEach(([key,label,type])=>{
-      const field=document.createElement('div'); field.className='field'+(type==='textarea'?' wide':'');
-      const val = editing[key]===null||editing[key]===undefined ? '' : editing[key];
-      const dis = canEdit ? '' : 'disabled';
-      const input = type==='textarea'
-        ? `<textarea id="f_${key}" ${dis}>${(''+val).replace(/</g,'&lt;')}</textarea>`
-        : `<input id="f_${key}" type="${type==='number'?'number':'text'}" step="any" value="${(''+val).replace(/"/g,'&quot;')}" ${dis} />`;
-      field.innerHTML=`<label>${label}</label>${input}`;
-      grid.appendChild(field);
+  normUse(data) { const sum = data.reduce((a, s) => a + (s.totalHours || 0), 0); return data.map(s => Object.assign({}, s, { useRate: sum > 0 ? (s.totalHours || 0) / sum * 100 : 0 })); }
+  async loadData() {
+    const { data, error } = await this.sb.from('sneakers').select('*').order('position', { ascending: true });
+    if (error) { console.error('load failed', error); this.setState({ ready: true, data: [] }); return; }
+    this.setState({ ready: true, data: this.normUse((data || []).map(fromDb)) });
+  }
+  async doLogin() {
+    const email = (this.state.loginEmail || '').trim(), password = this.state.loginPw || '';
+    if (!email || !password) { this.setState({ loginError: '输入邮箱和密码 · enter email & password' }); return; }
+    this.setState({ loginBusy: true, loginError: '' });
+    try {
+      const { error } = await this.sb.auth.signInWithPassword({ email, password });
+      if (error) { this.setState({ loginBusy: false, loginError: error.message }); return; }
+      this.setState({ loginBusy: false, loginPw: '' });
+    } catch (e) { this.setState({ loginBusy: false, loginError: String((e && e.message) || e) }); }
+  }
+  async logout() { try { await this.sb.auth.signOut(); } catch (e) {} this.setState({ view: 'grid', editingId: null, expandedId: null }); }
+
+  statusColor(s) { return ({ 'Roster': '#E10600', 'Retired': '#8E8E93', 'Sold / Return': '#C9A227', 'Out': '#46464A' })[s] || '#8E8E93'; }
+  scaleColor(pct) { const t = Math.max(0, Math.min(1, (pct || 0) / 100)); const r = Math.round(255 - 30 * t), g = Math.round(204 - 198 * t); return `rgb(${r},${g},0)`; }
+  courtStr(s) { return s.indoor && s.outdoor ? '内·外' : s.indoor ? '内场' : s.outdoor ? '外场' : '—'; }
+
+  blankForm() {
+    const f = { name: '', status: 'Roster', indoor: true, outdoor: false, size: '', purchaseDate: '', price: '', weight: '', gym: '', indoorHrs: '', outdoorHrs: '', games: '', pointsLog: '', prefBefore: '', prefAfter: '', notes: '', perfOverride: '' };
+    (this.axisKeys || []).forEach(k => f[k] = '');
+    return f;
+  }
+  formFromShoe(s) {
+    const f = this.blankForm();
+    Object.assign(f, {
+      name: s.name || '', status: s.status || 'Roster', indoor: !!s.indoor, outdoor: !!s.outdoor,
+      size: s.size || '', purchaseDate: s.purchaseDate || '',
+      price: s.price != null ? String(s.price) : '', weight: s.weightG != null ? String(s.weightG) : '',
+      gym: s.gym != null ? String(s.gym) : '', indoorHrs: s.indoorHrs != null ? String(s.indoorHrs) : '', outdoorHrs: s.outdoorHrs != null ? String(s.outdoorHrs) : '',
+      games: s.games != null ? String(s.games) : '', pointsLog: s.pointsLog || '',
+      prefBefore: s.prefBefore != null ? String(s.prefBefore) : '', prefAfter: s.prefAfter != null ? String(s.prefAfter) : '',
+      notes: s.desc || '', perfOverride: s.perf != null ? String(s.perf) : '',
     });
-    wrap.appendChild(grid); body.appendChild(wrap);
-  });
-  $('saveBtn').style.display = canEdit ? '' : 'none';
-  $('deleteBtn').style.display = (canEdit && !isNew) ? '' : 'none';
-  $('detailOverlay').classList.add('show');
+    this.axisKeys.forEach(k => f[k] = s[k] != null ? String(s[k]) : '');
+    return f;
+  }
+
+  openAdd() { this.setState({ view: 'form', editingId: null, form: this.blankForm() }); }
+  openEdit(id) { const s = this.state.data.find(x => x.id === id); this.setState({ view: 'form', editingId: id, form: this.formFromShoe(s) }); }
+  cancelForm() { this.setState({ view: 'grid', editingId: null }); }
+  setForm(k, v) { this.setState(st => ({ form: Object.assign({}, st.form, { [k]: v }) })); }
+  setRating(k, v) { this.setState(st => { const cur = +(st.form[k]) || 0; const nv = v === cur ? v - 1 : v; return { form: Object.assign({}, st.form, { [k]: String(Math.max(0, nv)) }) }; }); }
+  setFilter(f) { this.setState({ filter: f }); }
+  step(id, dir) { this.setState(st => { const m = Object.assign({}, st.metricIdx); const N = 24; m[id] = (((m[id] || 0) + dir) % N + N) % N; return { metricIdx: m }; }); }
+  flip(id) { this.setState(st => { const f = Object.assign({}, st.flipped); f[id] = !f[id]; return { flipped: f }; }); }
+  expand(id) { this.setState({ expandedId: id }); }
+  closeExpand() { this.setState({ expandedId: null }); }
+
+  parseOwned(str) {
+    if (!str) return null;
+    const p = String(str).trim().split(/[\/\-\s.]+/).map(Number);
+    if (p.length < 3 || p.some(isNaN)) return null;
+    const d = new Date(p[2], p[1] - 1, p[0]);
+    if (isNaN(d.getTime())) return null;
+    return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+  }
+  num(v) { return v === '' || v == null ? null : (+v); }
+
+  computeDerived(f) {
+    const gym = +f.gym || 0, ih = +f.indoorHrs || 0, oh = +f.outdoorHrs || 0;
+    const total = gym + ih + oh;
+    const rated = this.axisKeys.map(k => +f[k]).filter(v => v > 0);
+    const perfAuto = rated.length ? rated.reduce((a, b) => a + b, 0) / rated.length : 0;
+    const perf = (f.perfOverride !== '' && f.perfOverride != null) ? +f.perfOverride : perfAuto;
+    const price = +f.price || 0;
+    const value = price > 0 ? perf * 100 / price : null;
+    const unitPrice = total > 0 ? price / total : null;
+    const lifespan = total / 120 * 100;
+    const weightG = +f.weight || 0;
+    const weightPct = weightG > 0 ? 3785 / weightG : null;
+    const ownedDays = this.parseOwned(f.purchaseDate);
+    const pb = +f.prefBefore || 0, pa = +f.prefAfter || 0;
+    const prefDiff = pb > 0 ? (pa - pb) / pb * 100 : 0;
+    const others = this.state.data.filter(s => this.state.editingId == null || s.id !== this.state.editingId).reduce((a, s) => a + (s.totalHours || 0), 0);
+    const useRate = (others + total) > 0 ? total / (others + total) * 100 : 0;
+    return { total, perf, perfAuto, value, unitPrice, lifespan, weightG, weightPct, ownedDays, prefDiff, useRate };
+  }
+
+  async commitForm() {
+    const f = this.state.form, d = this.computeDerived(f);
+    const indoor = !!f.indoor, outdoor = !!f.outdoor;
+    const court = [indoor ? '内场' : null, outdoor ? '外场' : null].filter(Boolean).join(', ');
+    const editing = this.state.editingId != null;
+    const maxPos = this.state.data.reduce((m, s) => Math.max(m, s.position || 0), 0);
+    const cur = editing ? this.state.data.find(s => s.id === this.state.editingId) : null;
+    const shoe = {
+      position: editing ? (cur ? cur.position : maxPos + 1) : maxPos + 1,
+      status: f.status || 'Roster', indoor, outdoor, courtRaw: court, name: (f.name || '').trim() || 'Unnamed',
+      perf: d.perf, prefDiff: d.prefDiff, lifespan: d.lifespan,
+      gym: +f.gym || 0, outdoorHrs: +f.outdoorHrs || 0, indoorHrs: +f.indoorHrs || 0,
+      games: +f.games || 0, pointsLog: f.pointsLog || '', desc: f.notes || '', weightPct: d.weightPct,
+      totalHours: d.total, weightG: this.num(f.weight), purchaseDate: f.purchaseDate || '', ownedDays: d.ownedDays,
+      price: this.num(f.price), unitPrice: d.unitPrice, size: f.size || '', value: d.value,
+      prefBefore: this.num(f.prefBefore), prefAfter: this.num(f.prefAfter), useRate: d.useRate,
+    };
+    this.axisKeys.forEach(k => shoe[k] = this.num(f[k]));
+    if (this.state.saving) return;
+    this.setState({ saving: true });
+    const row = toDb(shoe);
+    let res;
+    if (editing) res = await this.sb.from('sneakers').update(row).eq('id', this.state.editingId).select();
+    else res = await this.sb.from('sneakers').insert(row).select();
+    if (res.error) { this.setState({ saving: false }); window.alert('保存失败 · Save failed: ' + res.error.message); return; }
+    await this.loadData();
+    this.setState({ view: 'grid', editingId: null, saving: false });
+  }
+  async deleteShoe() {
+    const id = this.state.editingId; if (id == null) return;
+    if (!window.confirm('删除这双？ Delete this pair? This cannot be undone.')) return;
+    const { error } = await this.sb.from('sneakers').delete().eq('id', id);
+    if (error) { window.alert('删除失败 · Delete failed: ' + error.message); return; }
+    await this.loadData();
+    this.setState({ view: 'grid', editingId: null });
+  }
+
+  pill(text, color) {
+    const h = React.createElement;
+    return h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 11px', borderRadius: 7, background: 'rgba(255,255,255,.32)', backdropFilter: 'blur(7px)', WebkitBackdropFilter: 'blur(7px)', border: '1.5px solid ' + color, boxShadow: '0 3px 10px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.6)' } }, [
+      h('span', { key: 'd', style: { width: 6, height: 6, borderRadius: '50%', background: color, boxShadow: '0 0 6px ' + color, flex: 'none' } }),
+      h('span', { key: 't', style: { font: "700 10px/1 'Space Mono', monospace", letterSpacing: '.1em', color: color, textTransform: 'uppercase' } }, text || '—'),
+    ]);
+  }
+  makeRadar(shoe, S, opts) {
+    opts = opts || {}; const h = React.createElement; const axes = this.axes;
+    const pad = opts.labels ? 44 : 7; const cx = S / 2, cy = S / 2, r = (S / 2) - pad; const n = axes.length;
+    const ang = i => (-90 + i * (360 / n)) * Math.PI / 180;
+    const pt = (i, ratio) => [cx + r * ratio * Math.cos(ang(i)), cy + r * ratio * Math.sin(ang(i))];
+    const onDark = opts.onDark; const gridC = onDark ? 'rgba(255,255,255,.13)' : 'rgba(0,0,0,.12)'; const orange = '#E10600'; const els = [];
+    [0.34, 0.67, 1].forEach((lvl, k) => els.push(h('polygon', { key: 'r' + k, points: axes.map((a, i) => pt(i, lvl).join(',')).join(' '), fill: 'none', stroke: gridC, strokeWidth: 1 })));
+    axes.forEach((a, i) => { const [x, y] = pt(i, 1); els.push(h('line', { key: 's' + i, x1: cx, y1: cy, x2: x, y2: y, stroke: gridC, strokeWidth: 1 })); });
+    const dp = axes.map((a, i) => pt(i, (shoe[a.key] || 0) / 10).join(',')).join(' ');
+    els.push(h('polygon', { key: 'd', points: dp, fill: 'rgba(240,83,28,.15)', stroke: orange, strokeWidth: opts.labels ? 1.8 : 1.4, strokeLinejoin: 'round' }));
+    axes.forEach((a, i) => { const [x, y] = pt(i, (shoe[a.key] || 0) / 10); els.push(h('circle', { key: 'v' + i, cx: x, cy: y, r: opts.labels ? 2.2 : 1.6, fill: orange })); });
+    if (opts.labels) axes.forEach((a, i) => {
+      const [x, y] = pt(i, 1.16); const anchor = Math.abs(x - cx) < 2 ? 'middle' : (x > cx ? 'start' : 'end');
+      els.push(h('text', { key: 'lz' + i, x, y: y - 2, textAnchor: anchor, fontSize: 8.5, fontFamily: "'Noto Sans SC', sans-serif", fontWeight: 600, fill: '#1B1B18' }, a.zh));
+      els.push(h('text', { key: 'le' + i, x, y: y + 7, textAnchor: anchor, fontSize: 5.8, fontFamily: "'Space Mono', monospace", letterSpacing: '.04em', fill: '#9a9789' }, a.en.toUpperCase()));
+    });
+    return h('svg', { width: S, height: S, viewBox: `0 0 ${S} ${S}`, style: { display: 'block' } }, els);
+  }
+  makeGauge(val, max, color, size) {
+    const h = React.createElement; size = size || 50;
+    const cx = size / 2, cy = size / 2, R = size / 2 - 4;
+    const ratio = max > 0 ? Math.max(0, Math.min(1, val / max)) : 0;
+    const p = deg => { const r = deg * Math.PI / 180; return [cx + R * Math.sin(r), cy - R * Math.cos(r)]; };
+    const arc = (d0, d1) => { const [x0, y0] = p(d0); const [x1, y1] = p(d1); const large = (d1 - d0) > 180 ? 1 : 0; return `M ${x0} ${y0} A ${R} ${R} 0 ${large} 1 ${x1} ${y1}`; };
+    return h('svg', { width: size, height: size, viewBox: `0 0 ${size} ${size}`, style: { display: 'block' } }, [
+      h('path', { key: 't', d: arc(-135, 135), fill: 'none', stroke: 'rgba(0,0,0,.11)', strokeWidth: 3.5, strokeLinecap: 'round' }),
+      h('path', { key: 'f', d: arc(-135, -135 + ratio * 270), fill: 'none', stroke: color, strokeWidth: 3.5, strokeLinecap: 'round' }),
+    ]);
+  }
+
+  loginVals() {
+    return {
+      isLoading: false, isLogin: false, isGrid: false, isForm: false,
+      fLoginEmail: this.state.loginEmail || '', fLoginPw: this.state.loginPw || '',
+      onLoginEmail: e => this.setState({ loginEmail: e.target.value, loginError: '' }),
+      onLoginPw: e => this.setState({ loginPw: e.target.value, loginError: '' }),
+      onLoginKey: e => { if (e.key === 'Enter') this.doLogin(); },
+      doLogin: () => this.doLogin(), logout: () => this.logout(),
+      loginError: this.state.loginError || '',
+      loginBtnLabel: this.state.loginBusy ? 'SIGNING IN 登录中…' : 'ENTER 进入',
+      openAdd: () => this.openAdd(),
+    };
+  }
+
+  renderVals() {
+    const base = this.loginVals();
+    if (this.state.booting) return Object.assign(base, { isLoading: true });
+    if (!this.state.authed) return Object.assign(base, { isLogin: true });
+    if (!this.state.ready) return Object.assign(base, { isGrid: true, count: '··', totalHours: '··', cardShoes: [], filterChips: null, hasExpanded: false });
+
+    const h = React.createElement;
+    const data = this.state.data;
+    const view = this.state.view;
+
+    const maxH = Math.max(1, ...data.map(s => s.totalHours || 0));
+    const maxUse = Math.max(0.01, ...data.map(s => s.useRate || 0));
+    const maxVal = Math.max(0.01, ...data.map(s => s.value || 0));
+    const maxPrice = Math.max(1, ...data.map(s => s.price || 0));
+    const maxUnit = Math.max(0.01, ...data.map(s => s.unitPrice || 0));
+    const maxOwned = Math.max(1, ...data.map(s => s.ownedDays || 0));
+    const maxGames = Math.max(1, ...data.map(s => s.games || 0));
+    const maxWeight = Math.max(1, ...data.map(s => s.weightG || 0));
+    const clamp = v => Math.max(0, Math.min(100, v || 0));
+    const r10 = v => v != null ? String(v) : '—';
+
+    const dataItems = s => [
+      { en: 'PERF', zh: '实战指标', val: (s.perf || 0).toFixed(2), pct: clamp((s.perf || 0) / 10 * 100) },
+      { en: 'VALUE', zh: '性价比', val: (s.value || 0).toFixed(2), pct: clamp((s.value || 0) / maxVal * 100) },
+      { en: 'USE', zh: '使用率', val: (s.useRate || 0).toFixed(2) + '%', pct: clamp((s.useRate || 0) / maxUse * 100) },
+      { en: 'TOTAL', zh: '总时长', val: Math.round(s.totalHours || 0) + 'h', pct: clamp((s.totalHours || 0) / maxH * 100) },
+      { en: 'LIFE', zh: '寿命', val: (s.lifespan != null ? Math.round(s.lifespan) : 0) + '%', pct: clamp(s.lifespan || 0) },
+      { en: '£/HR', zh: '单位价格', val: s.unitPrice != null ? '£' + s.unitPrice.toFixed(2) : '—', pct: clamp((s.unitPrice || 0) / maxUnit * 100) },
+      { en: 'PRICE', zh: '购入价', val: s.price != null ? '£' + Math.round(s.price) : '—', pct: clamp((s.price || 0) / maxPrice * 100) },
+      { en: 'OWNED', zh: '拥有天数', val: (s.ownedDays != null ? s.ownedDays : 0) + 'd', pct: clamp((s.ownedDays || 0) / maxOwned * 100) },
+      { en: 'GAMES', zh: '比赛场次', val: String(s.games || 0), pct: clamp((s.games || 0) / maxGames * 100) },
+      { en: 'GYM', zh: '健身房', val: (s.gym || 0) + 'h', pct: clamp((s.gym || 0) / maxH * 100) },
+      { en: 'INDOOR', zh: '内场', val: (s.indoorHrs || 0) + 'h', pct: clamp((s.indoorHrs || 0) / maxH * 100) },
+      { en: 'OUTDOOR', zh: '外场', val: (s.outdoorHrs || 0) + 'h', pct: clamp((s.outdoorHrs || 0) / maxH * 100) },
+      { en: 'WEIGHT', zh: '重量', val: (s.weightG != null ? s.weightG : 0) + 'g', pct: clamp((s.weightG || 0) / maxWeight * 100) },
+      { en: 'WT %', zh: '重量占比', val: s.weightPct != null ? s.weightPct.toFixed(1) + '%' : '—', pct: clamp(s.weightPct || 0) },
+      { en: 'PREF±', zh: '偏好变化', val: (s.prefDiff != null ? (s.prefDiff > 0 ? '+' : '') + Math.round(s.prefDiff) : 0) + '%', pct: clamp(((s.prefDiff || 0) + 100) / 2) },
+      { en: 'FOOT', zh: '足部健康', val: r10(s.footHealth), pct: clamp((s.footHealth || 0) * 10) },
+      { en: 'GRIP', zh: '抓地', val: r10(s.grip), pct: clamp((s.grip || 0) * 10) },
+      { en: 'FIT', zh: '鞋楦匹配', val: r10(s.fit), pct: clamp((s.fit || 0) * 10) },
+      { en: 'RESP', zh: '启动反馈', val: r10(s.response), pct: clamp((s.response || 0) * 10) },
+      { en: 'PROFILE', zh: '低重心', val: r10(s.lowProfile), pct: clamp((s.lowProfile || 0) * 10) },
+      { en: 'FORE', zh: '前掌缓震', val: r10(s.foreCushion), pct: clamp((s.foreCushion || 0) * 10) },
+      { en: 'HEEL', zh: '后掌缓震', val: r10(s.heelCushion), pct: clamp((s.heelCushion || 0) * 10) },
+      { en: 'TRANS', zh: '中底过渡', val: r10(s.transition), pct: clamp((s.transition || 0) * 10) },
+      { en: 'COMFORT', zh: '舒适度', val: r10(s.comfort), pct: clamp((s.comfort || 0) * 10) },
+    ];
+    const N = 24;
+
+    const filters = ['ALL', 'Roster', 'Retired', 'Sold / Return', 'Out'];
+    const fLabels = { 'ALL': '全部', 'Roster': '名单', 'Retired': '退役', 'Sold / Return': '出售', 'Out': '停用' };
+    const filterChips = h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, filters.map(ft => {
+      const active = this.state.filter === ft;
+      const c = ft === 'ALL' ? '#EFEDE6' : this.statusColor(ft);
+      const cnt = ft === 'ALL' ? data.length : data.filter(s => s.status === ft).length;
+      return h('div', { key: ft, onClick: () => this.setFilter(ft), style: { cursor: 'pointer', padding: '7px 12px', borderRadius: 7, font: "700 9px/1 'Space Mono', monospace", letterSpacing: '.08em', textTransform: 'uppercase', background: active ? (ft === 'ALL' ? '#EFEDE6' : c) : '#23221b', color: active ? (ft === 'ALL' ? '#16140f' : '#fff') : '#9a9789', border: '1px solid ' + (active ? 'transparent' : 'rgba(255,255,255,.1)'), display: 'flex', gap: 6, alignItems: 'center' } }, [
+        ft.replace(' / ', '/') + ' ' + fLabels[ft],
+        h('span', { key: 'c', style: { opacity: .65, fontSize: 8 } }, cnt),
+      ]);
+    }));
+
+    const filtered = (this.state.filter === 'ALL' ? data : data.filter(s => s.status === this.state.filter)).slice().sort((a, b) => (b.perf || 0) - (a.perf || 0));
+    const cardShoes = filtered.map(s => {
+      const idx = (this.state.metricIdx[s.id] || 0) % N;
+      const items = dataItems(s); const cur = items[idx]; const lc = this.scaleColor(cur.pct);
+      const segs = 14, lit = Math.round(cur.pct / 100 * segs);
+      const batteryEl = h('div', { style: { display: 'flex', gap: 2, height: 13, alignItems: 'stretch' } }, Array.from({ length: segs }, (_, i) => h('div', { key: i, style: { flex: 1, borderRadius: 1, background: i < lit ? lc : 'rgba(255,255,255,.1)' } })));
+      return {
+        name: s.name, size: s.size || '—', courtStr: this.courtStr(s),
+        statusPill: this.pill(s.status, this.statusColor(s.status)),
+        metricVal: cur.val, metricEn: cur.en, metricZh: cur.zh, metricColor: lc,
+        idxLabel: String(idx + 1).padStart(2, '0') + ' / ' + N, batteryEl,
+        onUp: () => this.step(s.id, -1), onDown: () => this.step(s.id, 1),
+        onFlip: () => this.flip(s.id), onEdit: () => this.openEdit(s.id), onExpand: () => this.expand(s.id),
+        flipTransform: this.state.flipped[s.id] ? 'rotateY(180deg)' : 'rotateY(0deg)',
+        frontVis: this.state.flipped[s.id] ? '0' : '1', backVis: this.state.flipped[s.id] ? '1' : '0',
+        notes: s.desc && s.desc.length ? s.desc : '— 无笔记 / no notes —',
+        pointsLog: s.pointsLog || '', hasPoints: !!(s.pointsLog && s.pointsLog.trim()),
+        gauges: [
+          { disp: (s.value || 0).toFixed(1), en: 'VALUE', zh: '性价比', gaugeEl: this.makeGauge(s.value || 0, maxVal, this.scaleColor((s.value || 0) / maxVal * 100), 50) },
+          { disp: String(Math.round(s.totalHours || 0)), en: 'HOURS', zh: '时长', gaugeEl: this.makeGauge(s.totalHours || 0, maxH, this.scaleColor((s.totalHours || 0) / maxH * 100), 50) },
+          { disp: (s.useRate || 0).toFixed(1), en: 'USE', zh: '使用率', gaugeEl: this.makeGauge(s.useRate || 0, maxUse, this.scaleColor((s.useRate || 0) / maxUse * 100), 50) },
+        ],
+      };
+    });
+
+    const F = this.state.form || {};
+    const mk = k => e => this.setForm(k, e.target.value);
+    const d = this.computeDerived(F);
+    const fmt = (v, suf, dec) => v == null ? '—' : (dec != null ? v.toFixed(dec) : Math.round(v)) + (suf || '');
+
+    const statusRow = h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, ['Roster', 'Retired', 'Sold / Return', 'Out'].map(st => {
+      const active = F.status === st; const c = this.statusColor(st);
+      return h('div', { key: st, onClick: () => this.setForm('status', st), style: { cursor: 'pointer', padding: '7px 11px', borderRadius: 6, font: "700 9px/1 'Space Mono', monospace", letterSpacing: '.05em', textTransform: 'uppercase', background: active ? c : '#F4F2EC', color: active ? '#fff' : '#8A8780', border: '1px solid ' + (active ? c : 'rgba(0,0,0,.14)') } }, st.replace(' / ', '/'));
+    }));
+    const courtRow = h('div', { style: { display: 'flex', gap: 6 } }, [['indoor', '内场 INDOOR'], ['outdoor', '外场 OUTDOOR']].map(([k, lbl]) => {
+      const active = !!F[k];
+      return h('div', { key: k, onClick: () => this.setForm(k, !F[k]), style: { cursor: 'pointer', flex: 1, textAlign: 'center', padding: '8px 10px', borderRadius: 6, font: "700 9px/1 'Space Mono', monospace", letterSpacing: '.05em', background: active ? '#1B1B18' : '#F4F2EC', color: active ? '#FF2D3F' : '#8A8780', border: '1px solid ' + (active ? '#1B1B18' : 'rgba(0,0,0,.14)') } }, lbl);
+    }));
+    const formAxes = (this.axes || []).map(a => {
+      const val = +(F[a.key]) || 0;
+      const cells = Array.from({ length: 10 }, (_, k) => h('div', {
+        key: k, onClick: () => this.setRating(a.key, k + 1),
+        style: { flex: 1, height: 18, borderRadius: 3, cursor: 'pointer', background: k < val ? this.scaleColor(val * 10) : 'rgba(0,0,0,.08)', boxShadow: k < val ? 'inset 0 1px 2px rgba(0,0,0,.22)' : 'none' },
+      }));
+      return { zh: a.zh, en: a.en, valLabel: val ? String(val) : '–', cells };
+    });
+    const pf = {}; (this.axisKeys || []).forEach(k => pf[k] = +(F[k]) || 0);
+
+    const expShoe = this.state.expandedId != null ? data.find(s => s.id === this.state.expandedId) : null;
+    const expItems = expShoe ? dataItems(expShoe).map((it, i) => {
+      const c = this.scaleColor(it.pct); const segs = 14, lit = Math.round(it.pct / 100 * segs);
+      const batteryEl = h('div', { style: { display: 'flex', gap: 2, height: 9, alignItems: 'stretch' } }, Array.from({ length: segs }, (_, k) => h('div', { key: k, style: { flex: 1, borderRadius: 1, background: k < lit ? c : 'rgba(255,255,255,.1)' } })));
+      return { num: String(i + 1).padStart(2, '0'), en: it.en, zh: it.zh, val: it.val, color: c, batteryEl };
+    }) : [];
+
+    return Object.assign(base, {
+      isLoading: false, isLogin: false, isGrid: view === 'grid', isForm: view === 'form',
+      count: data.length, totalHours: Math.round(data.reduce((a, s) => a + (s.totalHours || 0), 0)),
+      filterChips, cardShoes,
+      hasExpanded: !!expShoe, expName: expShoe ? expShoe.name : '', expItems,
+      closeExpand: () => this.closeExpand(), stopProp: (e) => e.stopPropagation(),
+      logout: () => this.logout(),
+      isEditing: this.state.editingId != null,
+      formTitle: this.state.editingId != null ? 'EDIT ENTRY 修改' : 'ADD ENTRY 添加',
+      formSubtitle: this.state.editingId != null ? (F.name || '') : '新建一双球鞋 / new pair',
+      saveLabel: this.state.saving ? 'SAVING 保存中…' : 'SAVE 保存',
+      openAdd: () => this.openAdd(), cancelForm: () => this.cancelForm(), commitForm: () => this.commitForm(), deleteShoe: () => this.deleteShoe(),
+      statusRow, courtRow, formAxes, radarForm: this.makeRadar(pf, 220, { labels: true }),
+      fName: F.name || '', fSize: F.size || '', fDate: F.purchaseDate || '', fPrice: F.price || '', fWeight: F.weight || '',
+      fGym: F.gym || '', fIndoor: F.indoorHrs || '', fOutdoor: F.outdoorHrs || '', fGames: F.games || '',
+      fPrefBefore: F.prefBefore || '', fPrefAfter: F.prefAfter || '', fPoints: F.pointsLog || '', fNotes: F.notes || '', fPerf: F.perfOverride || '',
+      onName: mk('name'), onSize: mk('size'), onDate: mk('purchaseDate'), onPrice: mk('price'), onWeight: mk('weight'),
+      onGym: mk('gym'), onIndoor: mk('indoorHrs'), onOutdoor: mk('outdoorHrs'), onGames: mk('games'),
+      onPrefBefore: mk('prefBefore'), onPrefAfter: mk('prefAfter'), onPoints: mk('pointsLog'), onNotes: mk('notes'), onPerf: mk('perfOverride'),
+      dPerf: (d.perf || 0).toFixed(2), dPerfAuto: (d.perfAuto || 0).toFixed(1),
+      dValue: d.value != null ? d.value.toFixed(2) : '—', dUnit: d.unitPrice != null ? '£' + d.unitPrice.toFixed(2) : '—',
+      dTotal: fmt(d.total, 'h'), dLife: fmt(d.lifespan, '%'), dUse: fmt(d.useRate, '%', 2), dWeightPct: d.weightPct != null ? d.weightPct.toFixed(1) + '%' : '—',
+    });
+  }
 }
-function closeDetail(){ $('detailOverlay').classList.remove('show'); editing=null; }
-function gather(){
-  const obj={};
-  ALLFIELDS.forEach(([key,,type])=>{
-    let v=$('f_'+key).value;
-    if(type==='number'){ v=v.trim()===''?null:Number(v); if(v!==null&&!isFinite(v))v=null; }
-    else { v=v.trim()===''?null:v; }
-    obj[key]=v;
-  });
-  return obj;
-}
-$('saveBtn').onclick = async ()=>{
-  if(!state.user){ toast('Log in first',true); return; }
-  const payload=gather();
-  if(!payload.name){ toast('Name is required',true); return; }
-  $('saveBtn').disabled=true;
-  let res;
-  if(editing && editing.id){ res=await sb.from('sneakers').update(payload).eq('id',editing.id).select(); }
-  else { res=await sb.from('sneakers').insert(payload).select(); }
-  $('saveBtn').disabled=false;
-  if(res.error){ toast('Save failed: '+res.error.message,true); return; }
-  closeDetail(); await load(); toast('Saved');
-};
-$('deleteBtn').onclick = async ()=>{
-  if(!editing||!editing.id) return;
-  if(!confirm('Delete "'+(editing.name||'this sneaker')+'"? This cannot be undone.')) return;
-  const {error}=await sb.from('sneakers').delete().eq('id',editing.id);
-  if(error){ toast('Delete failed: '+error.message,true); return; }
-  closeDetail(); await load(); toast('Deleted');
-};
-$('addBtn').onclick = ()=>{
-  const maxPos=state.rows.reduce((m,r)=>Math.max(m,Number(r.position)||0),0);
-  openDetail(null);
-  if($('f_position')) $('f_position').value = maxPos+1;
-};
-
-// ---- CSV export -----------------------------------------------------------
-$('exportBtn').onclick = ()=>{
-  const cols=['position',...ALLFIELDS.map(f=>f[0]).filter(k=>k!=='position')];
-  const esc=v=>{ if(v===null||v===undefined)return''; const s=''+v; return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
-  const lines=[cols.join(',')];
-  state.rows.slice().sort((a,b)=>(Number(a.position)||0)-(Number(b.position)||0))
-    .forEach(r=>lines.push(cols.map(c=>esc(r[c])).join(',')));
-  const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download='sneaker-os-export.csv'; a.click(); URL.revokeObjectURL(a.href);
-  toast('CSV exported');
-};
-
-// close overlays on backdrop click / Esc
-document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{ if(e.target===o) o.classList.remove('show'); }));
-document.addEventListener('keydown',e=>{ if(e.key==='Escape') document.querySelectorAll('.overlay').forEach(o=>o.classList.remove('show')); });
-
-// ---- boot -----------------------------------------------------------------
-sb.auth.onAuthStateChange(()=>refreshUser());
-(async()=>{ await refreshUser(); await load(); })();
 </script>
 </body>
 </html>
