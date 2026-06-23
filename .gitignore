@@ -1,0 +1,3 @@
+# Keep the raw roster data out of the public repo.
+# The app reads from Supabase; these are local-only working/backup files.
+db/
