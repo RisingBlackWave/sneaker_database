@@ -94,7 +94,7 @@
               <div style="position:relative;width:100%;height:100%;transition:transform .55s cubic-bezier(.4,.05,.2,1);-webkit-transform-style:preserve-3d;transform-style:preserve-3d;transform:{{ s.flipTransform }}">
 
                 <!-- FRONT -->
-                <div style="position:absolute;inset:0;-webkit-backface-visibility:hidden;backface-visibility:hidden;opacity:{{ s.frontVis }};transition:opacity .1s linear .25s;background:#F4F4F3;border:1px solid rgba(0,0,0,.1);border-radius:9px;padding:12px;display:flex;flex-direction:column;gap:9px">
+                <div style="position:absolute;inset:0;-webkit-backface-visibility:hidden;backface-visibility:hidden;opacity:{{ s.frontVis }};transition:opacity .1s linear .25s;background:#F4F4F3;border:{{ s.cardBorder }};border-radius:9px;padding:12px;display:flex;flex-direction:column;gap:9px">
                   <div style="min-width:0">
                     <div style="font:700 13px/1.15 Archivo,sans-serif;color:#1B1B18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.name }}</div>
                     <div style="font:400 9px/1 'Space Mono',monospace;color:#8A8780;margin-top:4px;letter-spacing:.04em">{{ s.size }} · {{ s.courtStr }}</div>
@@ -485,7 +485,7 @@ class Component extends DCLogic {
   }
   async logout() { try { await this.sb.auth.signOut(); } catch (e) {} this.setState({ view: 'grid', editingId: null, expandedId: null }); }
 
-  statusColor(s) { return ({ 'Roster': '#E10600', 'Retired': '#8E8E93', 'Sold / Return': '#C9A227', 'Out': '#46464A' })[s] || '#8E8E93'; }
+  statusColor(s) { return ({ 'Roster': '#E10600', 'Retired': '#D4AF37', 'Sold / Return': '#C9A227', 'Out': '#46464A' })[s] || '#8E8E93'; }
   scaleColor(pct) { const t = Math.max(0, Math.min(1, (pct || 0) / 100)); const r = Math.round(255 - 30 * t), g = Math.round(204 - 198 * t); return `rgb(${r},${g},0)`; }
   courtStr(s) { return s.indoor && s.outdoor ? '内·外' : s.indoor ? '内场' : s.outdoor ? '外场' : '—'; }
 
@@ -704,6 +704,7 @@ class Component extends DCLogic {
       const batteryEl = h('div', { style: { display: 'flex', gap: 2, height: 13, alignItems: 'stretch' } }, Array.from({ length: segs }, (_, i) => h('div', { key: i, style: { flex: 1, borderRadius: 1, background: i < lit ? lc : 'rgba(255,255,255,.1)' } })));
       return {
         name: s.name, size: s.size || '—', courtStr: this.courtStr(s),
+        cardBorder: s.status === 'Retired' ? '1.5px solid #D4AF37' : '1px solid rgba(0,0,0,.1)',
         statusPill: this.pill(s.status, this.statusColor(s.status)),
         metricVal: cur.val, metricEn: cur.en, metricZh: cur.zh, metricColor: lc,
         idxLabel: String(idx + 1).padStart(2, '0') + ' / ' + N, batteryEl,
