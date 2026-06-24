@@ -94,10 +94,10 @@
               <div style="position:relative;width:100%;height:100%;transition:transform .55s cubic-bezier(.4,.05,.2,1);-webkit-transform-style:preserve-3d;transform-style:preserve-3d;transform:{{ s.flipTransform }}">
 
                 <!-- FRONT -->
-                <div style="position:absolute;inset:0;-webkit-backface-visibility:hidden;backface-visibility:hidden;opacity:{{ s.frontVis }};transition:opacity .1s linear .25s;background:#F4F4F3;border:{{ s.cardBorder }};border-radius:9px;padding:12px;display:flex;flex-direction:column;gap:9px">
+                <div style="position:absolute;inset:0;-webkit-backface-visibility:hidden;backface-visibility:hidden;opacity:{{ s.frontVis }};transition:opacity .1s linear .25s;background:{{ s.faceBg }};border:{{ s.faceBorder }};border-radius:9px;padding:12px;display:flex;flex-direction:column;gap:9px">
                   <div style="min-width:0">
                     <div style="font:700 13px/1.15 Archivo,sans-serif;color:#1B1B18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.name }}</div>
-                    <div style="font:400 9px/1 'Space Mono',monospace;color:#8A8780;margin-top:4px;letter-spacing:.04em">{{ s.size }} · {{ s.courtStr }}</div>
+                    <div style="font:400 9px/1 'Space Mono',monospace;color:{{ s.faceMuted }};margin-top:4px;letter-spacing:.04em">{{ s.size }} · {{ s.courtStr }}</div>
                   </div>
 
                   <div style="display:flex;gap:8px;align-items:stretch">
@@ -122,7 +122,7 @@
                           {{ g.gaugeEl }}
                           <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:700 11px/1 'Space Mono',monospace;color:#1B1B18">{{ g.disp }}</div>
                         </div>
-                        <div style="font:400 6.5px/1.3 'Space Mono',monospace;letter-spacing:.05em;color:#8A8780;text-align:center">{{ g.en }}<br>{{ g.zh }}</div>
+                        <div style="font:400 6.5px/1.3 'Space Mono',monospace;letter-spacing:.05em;color:{{ s.faceMuted }};text-align:center">{{ g.en }}<br>{{ g.zh }}</div>
                       </div>
                     </sc-for>
                   </div>
@@ -485,7 +485,7 @@ class Component extends DCLogic {
   }
   async logout() { try { await this.sb.auth.signOut(); } catch (e) {} this.setState({ view: 'grid', editingId: null, expandedId: null }); }
 
-  statusColor(s) { return ({ 'Roster': '#E10600', 'Retired': '#D4AF37', 'Sold / Return': '#C9A227', 'Out': '#46464A' })[s] || '#8E8E93'; }
+  statusColor(s) { return ({ 'Roster': '#E10600', 'Retired': '#E8B73B', 'Sold / Return': '#C9A227', 'Out': '#46464A' })[s] || '#8E8E93'; }
   scaleColor(pct) { const t = Math.max(0, Math.min(1, (pct || 0) / 100)); const r = Math.round(255 - 30 * t), g = Math.round(204 - 198 * t); return `rgb(${r},${g},0)`; }
   courtStr(s) { return s.indoor && s.outdoor ? '内·外' : s.indoor ? '内场' : s.outdoor ? '外场' : '—'; }
 
@@ -579,11 +579,14 @@ class Component extends DCLogic {
     this.setState({ view: 'grid', editingId: null });
   }
 
-  pill(text, color) {
+  pill(text, color, solid) {
     const h = React.createElement;
-    return h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 11px', borderRadius: 7, background: 'rgba(255,255,255,.32)', backdropFilter: 'blur(7px)', WebkitBackdropFilter: 'blur(7px)', border: '1.5px solid ' + color, boxShadow: '0 3px 10px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.6)' } }, [
-      h('span', { key: 'd', style: { width: 6, height: 6, borderRadius: '50%', background: color, boxShadow: '0 0 6px ' + color, flex: 'none' } }),
-      h('span', { key: 't', style: { font: "700 10px/1 'Space Mono', monospace", letterSpacing: '.1em', color: color, textTransform: 'uppercase' } }, text || '—'),
+    const base = solid ? { background: color, border: '1.5px solid rgba(255,255,255,.45)', boxShadow: '0 3px 10px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.45)' }
+                       : { background: 'rgba(255,255,255,.32)', backdropFilter: 'blur(7px)', WebkitBackdropFilter: 'blur(7px)', border: '1.5px solid ' + color, boxShadow: '0 3px 10px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.6)' };
+    const ink = solid ? '#fff' : color;
+    return h('span', { style: Object.assign({ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 11px', borderRadius: 7 }, base) }, [
+      h('span', { key: 'd', style: { width: 6, height: 6, borderRadius: '50%', background: ink, boxShadow: '0 0 6px ' + (solid ? 'rgba(255,255,255,.7)' : color), flex: 'none' } }),
+      h('span', { key: 't', style: { font: "700 10px/1 'Space Mono', monospace", letterSpacing: '.1em', color: ink, textTransform: 'uppercase' } }, text || '—'),
     ]);
   }
   makeRadar(shoe, S, opts) {
@@ -704,8 +707,11 @@ class Component extends DCLogic {
       const batteryEl = h('div', { style: { display: 'flex', gap: 2, height: 13, alignItems: 'stretch' } }, Array.from({ length: segs }, (_, i) => h('div', { key: i, style: { flex: 1, borderRadius: 1, background: i < lit ? lc : 'rgba(255,255,255,.1)' } })));
       return {
         name: s.name, size: s.size || '—', courtStr: this.courtStr(s),
-        cardBorder: s.status === 'Retired' ? '1.5px solid #D4AF37' : '1px solid rgba(0,0,0,.1)',
-        statusPill: this.pill(s.status, this.statusColor(s.status)),
+        isRetired: s.status === 'Retired',
+        faceBg: s.status === 'Retired' ? 'linear-gradient(158deg,#F7DE86 0%,#E9BC45 58%,#D8A52C 100%)' : '#F4F4F3',
+        faceBorder: s.status === 'Retired' ? '1px solid #C79324' : '1px solid rgba(0,0,0,.1)',
+        faceMuted: s.status === 'Retired' ? '#3B2E08' : '#8A8780',
+        statusPill: this.pill(s.status, this.statusColor(s.status), s.status === 'Retired'),
         metricVal: cur.val, metricEn: cur.en, metricZh: cur.zh, metricColor: lc,
         idxLabel: String(idx + 1).padStart(2, '0') + ' / ' + N, batteryEl,
         onUp: () => this.step(s.id, -1), onDown: () => this.step(s.id, 1),
