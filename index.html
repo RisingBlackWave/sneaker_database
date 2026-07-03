@@ -86,11 +86,12 @@
           </div>
         </div>
 
-        <div style="margin-bottom:18px">{{ filterChips }}</div>
+        <div style="margin-bottom:12px">{{ filterChips }}</div>
+        <div style="margin-bottom:18px">{{ sortControl }}</div>
 
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:26px">
           <sc-for list="{{ cardShoes }}" as="s" hint-placeholder-count="6">
-            <div style="height:262px;-webkit-perspective:1200px;perspective:1200px">
+            <div draggable="{{ s.draggable }}" onDragStart="{{ s.onDragStart }}" onDragOver="{{ s.onDragOver }}" onDrop="{{ s.onDrop }}" onDragEnd="{{ s.onDragEnd }}" style="height:262px;-webkit-perspective:1200px;perspective:1200px;opacity:{{ s.dragOpacity }};cursor:{{ s.dragCursor }};transition:opacity .15s">
               <div style="position:relative;width:100%;height:100%;transition:transform .55s cubic-bezier(.4,.05,.2,1);-webkit-transform-style:preserve-3d;transform-style:preserve-3d;transform:{{ s.flipTransform }}">
 
                 <!-- FRONT -->
@@ -448,13 +449,14 @@ function metricsOf(r, ctx) {
 }
 
 class Component extends DCLogic {
-  state = { booting: true, authed: false, ready: false, data: [], view: 'grid', editingId: null, filter: 'ALL', metricIdx: {}, flipped: {}, expandedId: null, form: {}, saving: false, loginEmail: '', loginPw: '', loginError: '', loginBusy: false };
+  state = { booting: true, authed: false, ready: false, data: [], view: 'grid', editingId: null, filter: 'ALL', sortKey: 'perf', sortDir: 'desc', dragId: null, metricIdx: {}, flipped: {}, expandedId: null, form: {}, saving: false, loginEmail: '', loginPw: '', loginError: '', loginBusy: false };
 
   async componentDidMount() {
     this.axes = AXES; this.axisKeys = AXES.map(a => a.key);
     for (let i = 0; i < 200 && !(window.supabase && window.supabase.createClient); i++) await new Promise(r => setTimeout(r, 40));
     if (!(window.supabase && window.supabase.createClient)) { console.error('supabase-js failed to load'); this.setState({ booting: false }); return; }
     this.sb = window.supabase.createClient(SB_URL, SB_KEY);
+    try { const sp = JSON.parse(localStorage.getItem('snk.sort') || 'null'); if (sp && sp.key) this.setState({ sortKey: sp.key, sortDir: sp.dir || 'desc' }); } catch (e) {}
     try {
       const { data } = await this.sb.auth.getSession();
       if (data && data.session) { this.setState({ authed: true }); await this.loadData(); }
@@ -515,6 +517,24 @@ class Component extends DCLogic {
   setForm(k, v) { this.setState(st => ({ form: Object.assign({}, st.form, { [k]: v }) })); }
   setRating(k, v) { this.setState(st => { const cur = +(st.form[k]) || 0; const nv = v === cur ? v - 1 : v; return { form: Object.assign({}, st.form, { [k]: String(Math.max(0, nv)) }) }; }); }
   setFilter(f) { this.setState({ filter: f }); }
+  setSort(k) { this.setState({ sortKey: k }, () => this.saveSortPref()); }
+  toggleDir() { this.setState(st => ({ sortDir: st.sortDir === 'asc' ? 'desc' : 'asc' }), () => this.saveSortPref()); }
+  saveSortPref() { try { localStorage.setItem('snk.sort', JSON.stringify({ key: this.state.sortKey, dir: this.state.sortDir })); } catch (e) {} }
+  async reorder(dragId, targetId) {
+    if (dragId == null || targetId == null || dragId === targetId) { this.setState({ dragId: null }); return; }
+    const ordered = this.state.data.slice().sort((a, b) => ((a.position || 0) - (b.position || 0))).map(s => ({ ...s }));
+    const from = ordered.findIndex(s => s.id === dragId), to = ordered.findIndex(s => s.id === targetId);
+    if (from < 0 || to < 0) { this.setState({ dragId: null }); return; }
+    const [moved] = ordered.splice(from, 1);
+    ordered.splice(to, 0, moved);
+    const changed = [];
+    ordered.forEach((s, i) => { const np = i + 1; if (s.position !== np) { s.position = np; changed.push({ id: s.id, position: np }); } });
+    this.setState({ data: ordered, sortKey: 'manual', dragId: null }, () => this.saveSortPref());
+    for (const c of changed) {
+      const { error } = await this.sb.from('sneakers').update({ position: c.position }).eq('id', c.id);
+      if (error) { console.error('reorder save failed', error); window.alert('排序保存失败 · Reorder save failed: ' + error.message); break; }
+    }
+  }
   step(id, dir) { this.setState(st => { const m = Object.assign({}, st.metricIdx); const N = 24; m[id] = (((m[id] || 0) + dir) % N + N) % N; return { metricIdx: m }; }); }
   flip(id) { this.setState(st => { const f = Object.assign({}, st.flipped); f[id] = !f[id]; return { flipped: f }; }); }
   expand(id) { this.setState({ expandedId: id }); }
@@ -637,7 +657,7 @@ class Component extends DCLogic {
     const base = this.loginVals();
     if (this.state.booting) return Object.assign(base, { isLoading: true });
     if (!this.state.authed) return Object.assign(base, { isLogin: true });
-    if (!this.state.ready) return Object.assign(base, { isGrid: true, count: '··', totalHours: '··', cardShoes: [], filterChips: null, hasExpanded: false });
+    if (!this.state.ready) return Object.assign(base, { isGrid: true, count: '··', totalHours: '··', cardShoes: [], filterChips: null, sortControl: null, hasExpanded: false });
 
     const h = React.createElement;
     const data = this.state.data;
@@ -698,7 +718,33 @@ class Component extends DCLogic {
       ]);
     }));
 
-    const filtered = (this.state.filter === 'ALL' ? data : data.filter(s => s.status === this.state.filter)).slice().sort((a, b) => ((M[b.id].perf || 0) - (M[a.id].perf || 0)));
+    const sortKey = this.state.sortKey || 'perf';
+    const sortDir = this.state.sortDir || 'desc';
+    const manual = sortKey === 'manual';
+    let filtered = (this.state.filter === 'ALL' ? data : data.filter(s => s.status === this.state.filter)).slice();
+    if (manual) {
+      filtered.sort((a, b) => ((a.position || 0) - (b.position || 0)));
+    } else {
+      const kv = s => {
+        if (sortKey === 'name') return (s.name || '').toLowerCase();
+        if (sortKey === 'price') return s.price || 0;
+        const mm = M[s.id] || {};
+        return sortKey === 'value' ? (mm.value || 0) : sortKey === 'hours' ? (mm.total || 0) : sortKey === 'use' ? (mm.useRate || 0) : sortKey === 'owned' ? (mm.ownedDays || 0) : (mm.perf || 0);
+      };
+      filtered.sort((a, b) => { const x = kv(a), y = kv(b); if (typeof x === 'string') return sortDir === 'asc' ? x.localeCompare(y) : y.localeCompare(x); return sortDir === 'asc' ? (x - y) : (y - x); });
+    }
+
+    const SORTS = [['manual', '手动', 'Manual'], ['perf', '实战', 'Perf'], ['value', '性价比', 'Value'], ['hours', '时长', 'Hours'], ['price', '购入价', 'Price'], ['name', '名称', 'Name']];
+    const sortControl = h('div', { style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' } }, [
+      h('span', { key: 'l', style: { font: "700 9px/1 'Space Mono', monospace", letterSpacing: '.14em', color: '#6f6d5e', textTransform: 'uppercase' } }, 'ORDER 排序'),
+      ...SORTS.map(([k, zh, en]) => {
+        const active = sortKey === k;
+        return h('div', { key: k, onClick: () => this.setSort(k), style: { cursor: 'pointer', padding: '6px 11px', borderRadius: 7, font: "700 9px/1 'Space Mono', monospace", letterSpacing: '.06em', textTransform: 'uppercase', background: active ? '#EFEDE6' : '#23221b', color: active ? '#16140f' : '#9a9789', border: '1px solid ' + (active ? 'transparent' : 'rgba(255,255,255,.1)') } }, en + ' ' + zh);
+      }),
+      manual ? null : h('div', { key: 'dir', onClick: () => this.toggleDir(), title: 'direction 方向', style: { cursor: 'pointer', padding: '6px 10px', borderRadius: 7, font: "700 9px/1 'Space Mono', monospace", background: '#26241d', border: '1px solid rgba(255,255,255,.12)', color: '#cfcdbf' } }, sortDir === 'desc' ? '▼ 高→低' : '▲ 低→高'),
+      manual ? h('span', { key: 'hint', style: { font: "400 8.5px/1.4 'Space Mono', monospace", letterSpacing: '.03em', color: '#C9A227' } }, '⠿ 拖拽卡片排序 · drag cards to arrange') : null,
+    ].filter(Boolean));
+
     const cardShoes = filtered.map(s => {
       const m = M[s.id];
       const idx = (this.state.metricIdx[s.id] || 0) % N;
@@ -711,6 +757,11 @@ class Component extends DCLogic {
         faceBg: s.status === 'Retired' ? 'linear-gradient(158deg,#F7DE86 0%,#E9BC45 58%,#D8A52C 100%)' : '#F4F4F3',
         faceBorder: s.status === 'Retired' ? '1px solid #C79324' : '1px solid rgba(0,0,0,.1)',
         faceMuted: s.status === 'Retired' ? '#3B2E08' : '#8A8780',
+        draggable: manual, dragCursor: manual ? 'grab' : 'default', dragOpacity: (this.state.dragId === s.id) ? '0.4' : '1',
+        onDragStart: manual ? (e => { if (e && e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(s.id)); } catch (_) {} } this.setState({ dragId: s.id }); }) : (() => {}),
+        onDragOver: manual ? (e => e.preventDefault()) : (() => {}),
+        onDrop: manual ? (e => { if (e) e.preventDefault(); this.reorder(this.state.dragId, s.id); }) : (() => {}),
+        onDragEnd: manual ? (() => this.setState({ dragId: null })) : (() => {}),
         statusPill: this.pill(s.status, this.statusColor(s.status), s.status === 'Retired'),
         metricVal: cur.val, metricEn: cur.en, metricZh: cur.zh, metricColor: lc,
         idxLabel: String(idx + 1).padStart(2, '0') + ' / ' + N, batteryEl,
@@ -761,7 +812,7 @@ class Component extends DCLogic {
     return Object.assign(base, {
       isLoading: false, isLogin: false, isGrid: view === 'grid', isForm: view === 'form',
       count: data.length, totalHours: Math.round(data.reduce((a, s) => a + (M[s.id].total || 0), 0)),
-      filterChips, cardShoes,
+      filterChips, sortControl, cardShoes,
       hasExpanded: !!expShoe, expName: expShoe ? expShoe.name : '', expItems,
       closeExpand: () => this.closeExpand(), stopProp: (e) => e.stopPropagation(),
       logout: () => this.logout(),
