@@ -369,7 +369,7 @@ function fromDb(r){
   const court = r.court_type || '';
   return {
     id: r.id, position: r.position,
-    name: r.name || '', status: r.status || '',
+    name: r.name || '', status: (r.status === 'Retired' ? 'Back-up' : (r.status || '')),   // legacy status alias
     courtRaw: court, indoor: court.indexOf('内场') >= 0, outdoor: court.indexOf('外场') >= 0,
     size: r.size || '', purchaseDate: r.purchase_date || '',
     price: r.price_bought, weightG: r.weight_g,
@@ -487,7 +487,7 @@ class Component extends DCLogic {
   }
   async logout() { try { await this.sb.auth.signOut(); } catch (e) {} this.setState({ view: 'grid', editingId: null, expandedId: null }); }
 
-  statusColor(s) { return ({ 'Roster': '#E10600', 'Retired': '#E8B73B', 'Sold / Return': '#C9A227', 'Out': '#46464A' })[s] || '#8E8E93'; }
+  statusColor(s) { return ({ 'Roster': '#E10600', 'Back-up': '#8E8E93', 'Sold / Return': '#C9A227', 'Out': '#46464A', 'Pilot': '#4E93A6' })[s] || '#8E8E93'; }
   scaleColor(pct) { const t = Math.max(0, Math.min(1, (pct || 0) / 100)); const r = Math.round(255 - 30 * t), g = Math.round(204 - 198 * t); return `rgb(${r},${g},0)`; }
   courtStr(s) { return s.indoor && s.outdoor ? '内·外' : s.indoor ? '内场' : s.outdoor ? '外场' : '—'; }
 
@@ -706,14 +706,17 @@ class Component extends DCLogic {
     ];
     const N = 24;
 
-    const filters = ['ALL', 'Roster', 'Retired', 'Sold / Return', 'Out'];
-    const fLabels = { 'ALL': '全部', 'Roster': '名单', 'Retired': '退役', 'Sold / Return': '出售', 'Out': '停用' };
+    const GOLD_HOURS = 40;                                   // gold treatment threshold
+    const isGold = s => ((M[s.id] || {}).total || 0) > GOLD_HOURS;
+    const filters = ['ALL', 'Roster', 'Back-up', 'Sold / Return', 'Out', 'Pilot', 'GOLD'];
+    const fLabels = { 'ALL': 'ALL 全部', 'Roster': 'ROSTER 名单', 'Back-up': 'BACK-UP 备用', 'Sold / Return': 'SOLD/RETURN 出售', 'Out': 'OUT 停用', 'Pilot': 'PILOT 试用', 'GOLD': '40H+ 金卡' };
     const filterChips = h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, filters.map(ft => {
       const active = this.state.filter === ft;
-      const c = ft === 'ALL' ? '#EFEDE6' : this.statusColor(ft);
-      const cnt = ft === 'ALL' ? data.length : data.filter(s => s.status === ft).length;
-      return h('div', { key: ft, onClick: () => this.setFilter(ft), style: { cursor: 'pointer', padding: '7px 12px', borderRadius: 7, font: "700 9px/1 'Space Mono', monospace", letterSpacing: '.08em', textTransform: 'uppercase', background: active ? (ft === 'ALL' ? '#EFEDE6' : c) : '#23221b', color: active ? (ft === 'ALL' ? '#16140f' : '#fff') : '#9a9789', border: '1px solid ' + (active ? 'transparent' : 'rgba(255,255,255,.1)'), display: 'flex', gap: 6, alignItems: 'center' } }, [
-        ft.replace(' / ', '/') + ' ' + fLabels[ft],
+      const c = ft === 'ALL' ? '#EFEDE6' : ft === 'GOLD' ? '#E8B73B' : this.statusColor(ft);
+      const cnt = ft === 'ALL' ? data.length : ft === 'GOLD' ? data.filter(isGold).length : data.filter(s => s.status === ft).length;
+      const lightInk = (ft === 'ALL' || ft === 'GOLD');
+      return h('div', { key: ft, onClick: () => this.setFilter(ft), style: { cursor: 'pointer', padding: '7px 12px', borderRadius: 7, font: "700 9px/1 'Space Mono', monospace", letterSpacing: '.08em', textTransform: 'uppercase', background: active ? c : '#23221b', color: active ? (lightInk ? '#16140f' : '#fff') : '#9a9789', border: '1px solid ' + (active ? 'transparent' : 'rgba(255,255,255,.1)'), display: 'flex', gap: 6, alignItems: 'center' } }, [
+        fLabels[ft],
         h('span', { key: 'c', style: { opacity: .65, fontSize: 8 } }, cnt),
       ]);
     }));
@@ -721,7 +724,8 @@ class Component extends DCLogic {
     const sortKey = this.state.sortKey || 'perf';
     const sortDir = this.state.sortDir || 'desc';
     const manual = sortKey === 'manual';
-    let filtered = (this.state.filter === 'ALL' ? data : data.filter(s => s.status === this.state.filter)).slice();
+    const fSel = this.state.filter;
+    let filtered = (fSel === 'ALL' ? data : fSel === 'GOLD' ? data.filter(isGold) : data.filter(s => s.status === fSel)).slice();
     if (manual) {
       filtered.sort((a, b) => ((a.position || 0) - (b.position || 0)));
     } else {
@@ -747,22 +751,23 @@ class Component extends DCLogic {
 
     const cardShoes = filtered.map(s => {
       const m = M[s.id];
+      const gold = isGold(s);
       const idx = (this.state.metricIdx[s.id] || 0) % N;
       const items = dataItems(s, m); const cur = items[idx]; const lc = this.scaleColor(cur.pct);
       const segs = 14, lit = Math.round(cur.pct / 100 * segs);
       const batteryEl = h('div', { style: { display: 'flex', gap: 2, height: 13, alignItems: 'stretch' } }, Array.from({ length: segs }, (_, i) => h('div', { key: i, style: { flex: 1, borderRadius: 1, background: i < lit ? lc : 'rgba(255,255,255,.1)' } })));
       return {
         name: s.name, size: s.size || '—', courtStr: this.courtStr(s),
-        isRetired: s.status === 'Retired',
-        faceBg: s.status === 'Retired' ? 'linear-gradient(158deg,#F7DE86 0%,#E9BC45 58%,#D8A52C 100%)' : '#F4F4F3',
-        faceBorder: s.status === 'Retired' ? '1px solid #C79324' : '1px solid rgba(0,0,0,.1)',
-        faceMuted: s.status === 'Retired' ? '#3B2E08' : '#8A8780',
+        isGold: gold,
+        faceBg: gold ? 'linear-gradient(158deg,#F7DE86 0%,#E9BC45 58%,#D8A52C 100%)' : '#F4F4F3',
+        faceBorder: gold ? '1px solid #C79324' : '1px solid rgba(0,0,0,.1)',
+        faceMuted: gold ? '#3B2E08' : '#8A8780',
         draggable: manual, dragCursor: manual ? 'grab' : 'default', dragOpacity: (this.state.dragId === s.id) ? '0.4' : '1',
         onDragStart: manual ? (e => { if (e && e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(s.id)); } catch (_) {} } this.setState({ dragId: s.id }); }) : (() => {}),
         onDragOver: manual ? (e => e.preventDefault()) : (() => {}),
         onDrop: manual ? (e => { if (e) e.preventDefault(); this.reorder(this.state.dragId, s.id); }) : (() => {}),
         onDragEnd: manual ? (() => this.setState({ dragId: null })) : (() => {}),
-        statusPill: this.pill(s.status, this.statusColor(s.status), s.status === 'Retired'),
+        statusPill: this.pill(s.status, this.statusColor(s.status), gold),
         metricVal: cur.val, metricEn: cur.en, metricZh: cur.zh, metricColor: lc,
         idxLabel: String(idx + 1).padStart(2, '0') + ' / ' + N, batteryEl,
         onUp: () => this.step(s.id, -1), onDown: () => this.step(s.id, 1),
@@ -784,7 +789,7 @@ class Component extends DCLogic {
     const d = this.computeDerived(F);
     const fmt = (v, suf, dec) => v == null ? '—' : (dec != null ? v.toFixed(dec) : Math.round(v)) + (suf || '');
 
-    const statusRow = h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, ['Roster', 'Retired', 'Sold / Return', 'Out'].map(st => {
+    const statusRow = h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, ['Roster', 'Back-up', 'Sold / Return', 'Out', 'Pilot'].map(st => {
       const active = F.status === st; const c = this.statusColor(st);
       return h('div', { key: st, onClick: () => this.setForm('status', st), style: { cursor: 'pointer', padding: '7px 11px', borderRadius: 6, font: "700 9px/1 'Space Mono', monospace", letterSpacing: '.05em', textTransform: 'uppercase', background: active ? c : '#F4F2EC', color: active ? '#fff' : '#8A8780', border: '1px solid ' + (active ? c : 'rgba(0,0,0,.14)') } }, st.replace(' / ', '/'));
     }));
