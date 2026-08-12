@@ -87,8 +87,24 @@
         </div>
 
         <div style="margin-bottom:12px">{{ filterChips }}</div>
-        <div style="margin-bottom:18px">{{ sortControl }}</div>
+        <div style="margin-bottom:12px">{{ sortControl }}</div>
+        <div style="margin-bottom:18px">{{ crossControl }}</div>
 
+        <!-- ============ CROSS ANALYSIS (two axes selected) ============ -->
+        <sc-if value="{{ hasCross }}" hint-placeholder-val="{{ false }}">
+          <div style="background:#16160F;border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:18px 20px 12px;margin-bottom:26px">
+            <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:6px;flex-wrap:wrap">
+              <div>
+                <div style="font:700 15px/1.2 Archivo,sans-serif;color:#EBEBE9">{{ crossTitle }}</div>
+                <div style="font:400 8px/1 'Space Mono',monospace;letter-spacing:.18em;color:#8A8780;margin-top:5px;text-transform:uppercase">CROSS ANALYSIS · 交叉分析 · {{ crossCount }}</div>
+              </div>
+              <div onClick="{{ clearCross }}" style="cursor:pointer;padding:7px 12px;border-radius:7px;background:#26241d;border:1px solid rgba(255,255,255,.12);color:#cfcdbf;font:700 9px/1 'Space Mono',monospace;letter-spacing:.06em" style-active="transform:translateY(1px)">✕ CLOSE 关闭</div>
+            </div>
+            <div style="overflow-x:auto">{{ crossChart }}</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showGrid }}" hint-placeholder-val="{{ true }}">
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:26px">
           <sc-for list="{{ cardShoes }}" as="s" hint-placeholder-count="6">
             <div draggable="{{ s.draggable }}" onDragStart="{{ s.onDragStart }}" onDragOver="{{ s.onDragOver }}" onDrop="{{ s.onDrop }}" onDragEnd="{{ s.onDragEnd }}" style="height:262px;-webkit-perspective:1200px;perspective:1200px;opacity:{{ s.dragOpacity }};cursor:{{ s.dragCursor }};transition:opacity .15s">
@@ -154,6 +170,7 @@
             </div>
           </sc-for>
         </div>
+        </sc-if>
 
         <!-- ============ EXPANDED 24-METRIC OVERLAY ============ -->
         <sc-if value="{{ hasExpanded }}" hint-placeholder-val="{{ false }}">
@@ -449,7 +466,7 @@ function metricsOf(r, ctx) {
 }
 
 class Component extends DCLogic {
-  state = { booting: true, authed: false, ready: false, data: [], view: 'grid', editingId: null, filter: 'ALL', sortKey: 'perf', sortDir: 'desc', dragId: null, metricIdx: {}, flipped: {}, expandedId: null, form: {}, saving: false, loginEmail: '', loginPw: '', loginError: '', loginBusy: false };
+  state = { booting: true, authed: false, ready: false, data: [], view: 'grid', editingId: null, filter: 'ALL', sortKey: 'perf', sortDir: 'desc', dragId: null, crossAxes: [], metricIdx: {}, flipped: {}, expandedId: null, form: {}, saving: false, loginEmail: '', loginPw: '', loginError: '', loginBusy: false };
 
   async componentDidMount() {
     this.axes = AXES; this.axisKeys = AXES.map(a => a.key);
@@ -518,6 +535,15 @@ class Component extends DCLogic {
   setRating(k, v) { this.setState(st => { const cur = +(st.form[k]) || 0; const nv = v === cur ? v - 1 : v; return { form: Object.assign({}, st.form, { [k]: String(Math.max(0, nv)) }) }; }); }
   setFilter(f) { this.setState({ filter: f }); }
   setSort(k) { this.setState({ sortKey: k }, () => this.saveSortPref()); }
+  toggleCross(k) {
+    this.setState(st => {
+      const cur = (st.crossAxes || []).slice();
+      const i = cur.indexOf(k);
+      if (i >= 0) cur.splice(i, 1); else { cur.push(k); if (cur.length > 2) cur.shift(); }
+      return { crossAxes: cur };
+    });
+  }
+  clearCross() { this.setState({ crossAxes: [] }); }
   toggleDir() { this.setState(st => ({ sortDir: st.sortDir === 'asc' ? 'desc' : 'asc' }), () => this.saveSortPref()); }
   saveSortPref() { try { localStorage.setItem('snk.sort', JSON.stringify({ key: this.state.sortKey, dir: this.state.sortDir })); } catch (e) {} }
   async reorder(dragId, targetId) {
@@ -639,6 +665,77 @@ class Component extends DCLogic {
     ]);
   }
 
+  // XY scatter for cross analysis — one labelled point per shoe.
+  makeCrossChart(rows, xDef, yDef) {
+    const h = React.createElement;
+    const W = 1120, H = 620, ml = 88, mr = 46, mt = 26, mb = 66;
+    const pw = W - ml - mr, ph = H - mt - mb;
+    const xs = rows.map(r => r.x), ys = rows.map(r => r.y);
+    let x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
+    let y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
+    if (x1 === x0) { x0 -= 0.5; x1 += 0.5; }
+    if (y1 === y0) { y0 -= 0.5; y1 += 0.5; }
+    const px0 = (x1 - x0) * 0.08, py0 = (y1 - y0) * 0.10;
+    x0 -= px0; x1 += px0; y0 -= py0; y1 += py0;
+    const X = v => ml + (v - x0) / (x1 - x0) * pw;
+    const Y = v => mt + ph - (v - y0) / (y1 - y0) * ph;
+    const els = [];
+    const TICKS = 5;
+    const ft = v => Math.abs(v) >= 100 ? String(Math.round(v)) : String(Math.round(v * 10) / 10);
+    for (let i = 0; i <= TICKS; i++) {
+      const vx = x0 + (x1 - x0) * i / TICKS, gx = X(vx);
+      els.push(h('line', { key: 'gx' + i, x1: gx, y1: mt, x2: gx, y2: mt + ph, stroke: 'rgba(255,255,255,.06)', strokeWidth: 1 }));
+      els.push(h('text', { key: 'tx' + i, x: gx, y: mt + ph + 18, textAnchor: 'middle', fontSize: 8, fontFamily: "'Space Mono',monospace", fill: '#6f6d5e' }, ft(vx)));
+      const vy = y0 + (y1 - y0) * i / TICKS, gy = Y(vy);
+      els.push(h('line', { key: 'gy' + i, x1: ml, y1: gy, x2: ml + pw, y2: gy, stroke: 'rgba(255,255,255,.06)', strokeWidth: 1 }));
+      els.push(h('text', { key: 'ty' + i, x: ml - 10, y: gy + 3, textAnchor: 'end', fontSize: 8, fontFamily: "'Space Mono',monospace", fill: '#6f6d5e' }, ft(vy)));
+    }
+    els.push(h('line', { key: 'ax', x1: ml, y1: mt + ph, x2: ml + pw, y2: mt + ph, stroke: 'rgba(255,255,255,.22)', strokeWidth: 1 }));
+    els.push(h('line', { key: 'ay', x1: ml, y1: mt, x2: ml, y2: mt + ph, stroke: 'rgba(255,255,255,.22)', strokeWidth: 1 }));
+    const med = a => { const b = a.slice().sort((p, q) => p - q), n = b.length; return n ? (n % 2 ? b[(n - 1) / 2] : (b[n / 2 - 1] + b[n / 2]) / 2) : 0; };
+    const mX = X(med(xs)), mY = Y(med(ys));
+    els.push(h('line', { key: 'mx', x1: mX, y1: mt, x2: mX, y2: mt + ph, stroke: 'rgba(225,6,0,.3)', strokeWidth: 1, strokeDasharray: '4 4' }));
+    els.push(h('line', { key: 'my', x1: ml, y1: mY, x2: ml + pw, y2: mY, stroke: 'rgba(225,6,0,.3)', strokeWidth: 1, strokeDasharray: '4 4' }));
+    els.push(h('text', { key: 'medl', x: mX + 5, y: mt + 11, fontSize: 6.5, fontFamily: "'Space Mono',monospace", fill: 'rgba(225,6,0,.8)', letterSpacing: '.12em' }, 'MEDIAN 中位'));
+    els.push(h('text', { key: 'xt', x: ml + pw / 2, y: H - 16, textAnchor: 'middle', fontSize: 9.5, fontWeight: 700, fontFamily: "'Space Mono',monospace", fill: '#9b998a', letterSpacing: '.14em' }, xDef.en + ' · ' + xDef.zh + '  →'));
+    els.push(h('text', { key: 'yt', x: 17, y: mt + ph / 2, textAnchor: 'middle', fontSize: 9.5, fontWeight: 700, fontFamily: "'Space Mono',monospace", fill: '#9b998a', letterSpacing: '.14em', transform: 'rotate(-90 17 ' + (mt + ph / 2) + ')' }, yDef.en + ' · ' + yDef.zh + '  →'));
+    els.push(h('circle', { key: 'lgr', cx: ml + pw - 92, cy: mt + 9, r: 5.5, fill: 'none', stroke: '#E8B73B', strokeWidth: 1.4 }));
+    els.push(h('text', { key: 'lgt', x: ml + pw - 82, y: mt + 12, fontSize: 7, fontFamily: "'Space Mono',monospace", fill: '#8f8d7c', letterSpacing: '.1em' }, '40H+ 金卡'));
+
+    const placed = [];
+    rows.forEach(r => { const cx = X(r.x), cy = Y(r.y); placed.push({ x1: cx - 7, x2: cx + 7, y1: cy - 7, y2: cy + 7 }); });
+    const hits = b => placed.some(p => !(b.x2 < p.x1 || b.x1 > p.x2 || b.y2 < p.y1 || b.y1 > p.y2));
+    rows.forEach((r, i) => {
+      const cx = X(r.x), cy = Y(r.y), col = this.statusColor(r.s.status);
+      els.push(h('g', { key: 'p' + i }, [
+        h('title', { key: 'ti' }, r.s.name + ' — ' + xDef.en + ' ' + r.xs + ' · ' + yDef.en + ' ' + r.ys),
+        r.gold ? h('circle', { key: 'ring', cx: cx, cy: cy, r: 8, fill: 'none', stroke: '#E8B73B', strokeWidth: 1.4, opacity: .95 }) : null,
+        h('circle', { key: 'dot', cx: cx, cy: cy, r: 4.6, fill: col, stroke: 'rgba(0,0,0,.55)', strokeWidth: 1 }),
+      ].filter(Boolean)));
+    });
+    const CAND = [[10, 3, 'start'], [-10, 3, 'end'], [0, -10, 'middle'], [0, 18, 'middle']];
+    rows.forEach((r, i) => {
+      const cx = X(r.x), cy = Y(r.y);
+      const nm = r.s.name.length > 20 ? r.s.name.slice(0, 19) + '…' : r.s.name;
+      const sub = r.xs + ' / ' + r.ys;
+      const wpx = Math.max(nm.length * 4.6, sub.length * 4.3);
+      let put = null;
+      for (let c = 0; c < CAND.length; c++) {
+        const dx = CAND[c][0], dy = CAND[c][1], anc = CAND[c][2];
+        const lx = cx + dx, ly = cy + dy;
+        const bx = anc === 'start' ? lx : anc === 'end' ? lx - wpx : lx - wpx / 2;
+        const box = { x1: bx - 2, x2: bx + wpx + 2, y1: ly - 9, y2: ly + 10 };
+        if (box.x1 < 4 || box.x2 > W - 4 || box.y1 < mt - 2 || box.y2 > mt + ph + 2) continue;
+        if (!hits(box)) { put = { lx: lx, ly: ly, anc: anc, box: box }; break; }
+      }
+      if (!put) return;
+      placed.push(put.box);
+      els.push(h('text', { key: 'ln' + i, x: put.lx, y: put.ly, textAnchor: put.anc, fontSize: 8.2, fontWeight: 700, fontFamily: 'Archivo,sans-serif', fill: '#EBEBE9' }, nm));
+      els.push(h('text', { key: 'lv' + i, x: put.lx, y: put.ly + 8.6, textAnchor: put.anc, fontSize: 7, fontFamily: "'Space Mono',monospace", fill: '#8f8d7c', letterSpacing: '.04em' }, sub));
+    });
+    return h('svg', { width: '100%', viewBox: '0 0 ' + W + ' ' + H, style: { display: 'block', minWidth: '780px' } }, els);
+  }
+
   loginVals() {
     return {
       isLoading: false, isLogin: false, isGrid: false, isForm: false,
@@ -657,7 +754,7 @@ class Component extends DCLogic {
     const base = this.loginVals();
     if (this.state.booting) return Object.assign(base, { isLoading: true });
     if (!this.state.authed) return Object.assign(base, { isLogin: true });
-    if (!this.state.ready) return Object.assign(base, { isGrid: true, count: '··', totalHours: '··', cardShoes: [], filterChips: null, sortControl: null, hasExpanded: false });
+    if (!this.state.ready) return Object.assign(base, { isGrid: true, count: '··', totalHours: '··', cardShoes: [], filterChips: null, sortControl: null, crossControl: null, hasCross: false, showGrid: true, hasExpanded: false });
 
     const h = React.createElement;
     const data = this.state.data;
@@ -749,6 +846,47 @@ class Component extends DCLogic {
       manual ? h('span', { key: 'hint', style: { font: "400 8.5px/1.4 'Space Mono', monospace", letterSpacing: '.03em', color: '#C9A227' } }, '⠿ 拖拽卡片排序 · drag cards to arrange') : null,
     ].filter(Boolean));
 
+    // ---- cross analysis: pick two metrics -> XY scatter ----
+    const CROSS = [
+      { key: 'perf', en: 'PERF', zh: '实战', get: (s, m) => m.perf, fmt: v => v.toFixed(2) },
+      { key: 'value', en: 'VALUE', zh: '性价比', get: (s, m) => m.value, fmt: v => v.toFixed(2) },
+      { key: 'hours', en: 'HOURS', zh: '时长', get: (s, m) => m.total, fmt: v => Math.round(v) + 'h' },
+      { key: 'use', en: 'USE', zh: '使用率', get: (s, m) => m.useRate, fmt: v => v.toFixed(2) + '%' },
+      { key: 'price', en: 'PRICE', zh: '购入价', get: s => s.price, fmt: v => '£' + Math.round(v) },
+      { key: 'unit', en: '£/HR', zh: '单价', get: (s, m) => m.unitPrice, fmt: v => '£' + v.toFixed(2) },
+      { key: 'life', en: 'LIFE', zh: '寿命', get: (s, m) => m.lifespan, fmt: v => Math.round(v) + '%' },
+      { key: 'owned', en: 'OWNED', zh: '天数', get: (s, m) => m.ownedDays, fmt: v => Math.round(v) + 'd' },
+      { key: 'weight', en: 'WEIGHT', zh: '重量', get: s => s.weightG, fmt: v => Math.round(v) + 'g' },
+      { key: 'games', en: 'GAMES', zh: '场次', get: s => s.games, fmt: v => String(Math.round(v)) },
+    ];
+    const axSel = this.state.crossAxes || [];
+    const xDef = CROSS.filter(c => c.key === axSel[0])[0] || null;
+    const yDef = CROSS.filter(c => c.key === axSel[1])[0] || null;
+    const hasCross = !!(xDef && yDef);
+    const crossControl = h('div', { style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' } }, [
+      h('span', { key: 'l', style: { font: "700 9px/1 'Space Mono', monospace", letterSpacing: '.14em', color: '#6f6d5e', textTransform: 'uppercase' } }, 'CROSS 交叉'),
+      ...CROSS.map(c => {
+        const at = axSel.indexOf(c.key);
+        const on = at >= 0;
+        const tag = at === 0 ? 'X·' : at === 1 ? 'Y·' : '';
+        return h('div', { key: c.key, onClick: () => this.toggleCross(c.key), style: { cursor: 'pointer', padding: '6px 10px', borderRadius: 7, font: "700 9px/1 'Space Mono', monospace", letterSpacing: '.06em', textTransform: 'uppercase', background: on ? '#E10600' : '#23221b', color: on ? '#fff' : '#9a9789', border: '1px solid ' + (on ? 'transparent' : 'rgba(255,255,255,.1)') } }, tag + c.en + ' ' + c.zh);
+      }),
+      axSel.length === 1 ? h('span', { key: 'hint', style: { font: "400 8.5px/1.4 'Space Mono', monospace", color: '#C9A227', letterSpacing: '.03em' } }, '再选一个指标 · pick one more to plot') : null,
+      axSel.length === 0 ? h('span', { key: 'hint0', style: { font: "400 8.5px/1.4 'Space Mono', monospace", color: '#5f5d52', letterSpacing: '.03em' } }, '选两个指标做交叉分析 · select two metrics') : null,
+    ].filter(Boolean));
+
+    let crossRows = [];
+    if (hasCross) {
+      crossRows = filtered.map(s => {
+        const m = M[s.id];
+        const xv = xDef.get(s, m), yv = yDef.get(s, m);
+        if (xv == null || yv == null || isNaN(+xv) || isNaN(+yv)) return null;
+        return { s: s, m: m, x: +xv, y: +yv, xs: xDef.fmt(+xv), ys: yDef.fmt(+yv), gold: isGold(s) };
+      }).filter(Boolean);
+    }
+    const crossChart = (hasCross && crossRows.length) ? this.makeCrossChart(crossRows, xDef, yDef) : null;
+    const skipped = hasCross ? (filtered.length - crossRows.length) : 0;
+
     const cardShoes = filtered.map(s => {
       const m = M[s.id];
       const gold = isGold(s);
@@ -817,7 +955,11 @@ class Component extends DCLogic {
     return Object.assign(base, {
       isLoading: false, isLogin: false, isGrid: view === 'grid', isForm: view === 'form',
       count: data.length, totalHours: Math.round(data.reduce((a, s) => a + (M[s.id].total || 0), 0)),
-      filterChips, sortControl, cardShoes,
+      filterChips, sortControl, cardShoes, crossControl,
+      hasCross: hasCross && crossRows.length > 0, showGrid: !hasCross, crossChart,
+      crossTitle: hasCross ? (yDef.en + ' ' + yDef.zh + '  ×  ' + xDef.en + ' ' + xDef.zh) : '',
+      crossCount: hasCross ? (crossRows.length + ' shoes plotted · 双' + (skipped > 0 ? ' · ' + skipped + ' skipped (no data)' : '')) : '',
+      clearCross: () => this.clearCross(),
       hasExpanded: !!expShoe, expName: expShoe ? expShoe.name : '', expItems,
       closeExpand: () => this.closeExpand(), stopProp: (e) => e.stopPropagation(),
       logout: () => this.logout(),
