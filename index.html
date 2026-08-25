@@ -316,6 +316,9 @@
                     <span style="font:600 11px/1 Archivo,sans-serif;color:#1B1B18">{{ ax.zh }} <span style="font:400 8px/1 'Space Mono',monospace;color:#8A8780;letter-spacing:.06em">{{ ax.en }}</span></span>
                     <span style="font:700 12px/1 'Space Mono',monospace;color:#E10600">{{ ax.valLabel }}</span>
                   </div>
+                  <sc-if value="{{ ax.showRef }}" hint-placeholder-val="{{ false }}">
+                    <div>{{ ax.refEl }}</div>
+                  </sc-if>
                   <div style="display:flex;gap:3px">
                     <sc-for list="{{ ax.cells }}" as="c" hint-placeholder-count="10">{{ c }}</sc-for>
                   </div>
@@ -466,7 +469,7 @@ function metricsOf(r, ctx) {
 }
 
 class Component extends DCLogic {
-  state = { booting: true, authed: false, ready: false, data: [], view: 'grid', editingId: null, filter: 'ALL', sortKey: 'perf', sortDir: 'desc', dragId: null, crossAxes: [], metricIdx: {}, flipped: {}, expandedId: null, form: {}, saving: false, loginEmail: '', loginPw: '', loginError: '', loginBusy: false };
+  state = { booting: true, authed: false, ready: false, data: [], view: 'grid', editingId: null, filter: 'ALL', sortKey: 'perf', sortDir: 'desc', dragId: null, crossAxes: [], activeAxis: null, metricIdx: {}, flipped: {}, expandedId: null, form: {}, saving: false, loginEmail: '', loginPw: '', loginError: '', loginBusy: false };
 
   async componentDidMount() {
     this.axes = AXES; this.axisKeys = AXES.map(a => a.key);
@@ -528,11 +531,11 @@ class Component extends DCLogic {
     return f;
   }
 
-  openAdd() { this.setState({ view: 'form', editingId: null, form: this.blankForm() }); }
-  openEdit(id) { const s = this.state.data.find(x => x.id === id); this.setState({ view: 'form', editingId: id, form: this.formFromShoe(s) }); }
+  openAdd() { this.setState({ view: 'form', editingId: null, form: this.blankForm(), activeAxis: null }); }
+  openEdit(id) { const s = this.state.data.find(x => x.id === id); this.setState({ view: 'form', editingId: id, form: this.formFromShoe(s), activeAxis: null }); }
   cancelForm() { this.setState({ view: 'grid', editingId: null }); }
   setForm(k, v) { this.setState(st => ({ form: Object.assign({}, st.form, { [k]: v }) })); }
-  setRating(k, v) { this.setState(st => { const cur = +(st.form[k]) || 0; const nv = v === cur ? v - 1 : v; return { form: Object.assign({}, st.form, { [k]: String(Math.max(0, nv)) }) }; }); }
+  setRating(k, v) { this.setState(st => { const cur = +(st.form[k]) || 0; const nv = v === cur ? v - 1 : v; return { activeAxis: k, form: Object.assign({}, st.form, { [k]: String(Math.max(0, nv)) }) }; }); }
   setFilter(f) { this.setState({ filter: f }); }
   setSort(k) { this.setState({ sortKey: k }, () => this.saveSortPref()); }
   toggleCross(k) {
@@ -935,13 +938,34 @@ class Component extends DCLogic {
       const active = !!F[k];
       return h('div', { key: k, onClick: () => this.setForm(k, !F[k]), style: { cursor: 'pointer', flex: 1, textAlign: 'center', padding: '8px 10px', borderRadius: 6, font: "700 9px/1 'Space Mono', monospace", letterSpacing: '.05em', background: active ? '#1B1B18' : '#F4F2EC', color: active ? '#FF2D3F' : '#8A8780', border: '1px solid ' + (active ? '#1B1B18' : 'rgba(0,0,0,.14)') } }, lbl);
     }));
+    // ---- calibration: which other pairs share this exact axis score? ----
+    const editId = this.state.editingId;
+    const peersFor = (key, val) => (val > 0)
+      ? data.filter(x => x.id !== editId && +x[key] === val)
+            .sort((p, q) => (((M[q.id] || {}).perf || 0) - ((M[p.id] || {}).perf || 0)))
+      : [];
+    const refRow = (key, val) => {
+      const peers = peersFor(key, val);
+      const wrap = { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', margin: '0 0 5px', padding: '5px 8px', borderRadius: 5, background: 'rgba(0,0,0,.05)', borderLeft: '2px solid #E10600' };
+      const tag = h('span', { key: 'tg', style: { font: "700 7.5px/1 'Space Mono', monospace", letterSpacing: '.12em', color: '#E10600', flex: 'none' } }, '\u2316 \u540c\u5206 ' + val);
+      if (!peers.length) return h('div', { style: wrap }, [tag, h('span', { key: 'no', style: { font: "400 8px/1.3 'Space Mono', monospace", color: '#8A8780' } }, '\u6682\u65e0\u5176\u5b83\u540c\u5206\u7403\u978b \u00b7 no other pair at ' + val)]);
+      const items = peers.slice(0, 3).map((x, i) => h('span', { key: 'p' + i, style: { display: 'inline-flex', alignItems: 'baseline', gap: 4, minWidth: 0 } }, [
+        h('span', { key: 'n', style: { font: '600 9px/1.2 Archivo, sans-serif', color: '#1B1B18', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 108 } }, x.name),
+        h('span', { key: 'v', style: { font: "700 8.5px/1 'Space Mono', monospace", color: '#8A8780', flex: 'none' } }, (((M[x.id] || {}).perf) || 0).toFixed(2)),
+      ]));
+      if (peers.length > 3) items.push(h('span', { key: 'more', style: { font: "400 7.5px/1 'Space Mono', monospace", color: '#a5a297', flex: 'none' } }, '+' + (peers.length - 3)));
+      return h('div', { style: wrap }, [tag].concat(items));
+    };
+
     const formAxes = (this.axes || []).map(a => {
       const val = +(F[a.key]) || 0;
       const cells = Array.from({ length: 10 }, (_, k) => h('div', {
         key: k, onClick: () => this.setRating(a.key, k + 1),
         style: { flex: 1, height: 18, borderRadius: 3, cursor: 'pointer', background: k < val ? this.scaleColor(val * 10) : 'rgba(0,0,0,.08)', boxShadow: k < val ? 'inset 0 1px 2px rgba(0,0,0,.22)' : 'none' },
       }));
-      return { zh: a.zh, en: a.en, valLabel: val ? String(val) : '–', cells };
+      const isActive = this.state.activeAxis === a.key;
+      return { zh: a.zh, en: a.en, valLabel: val ? String(val) : '–', cells,
+               showRef: isActive && val > 0, refEl: (isActive && val > 0) ? refRow(a.key, val) : null };
     });
     const pf = {}; (this.axisKeys || []).forEach(k => pf[k] = +(F[k]) || 0);
 
