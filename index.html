@@ -324,6 +324,22 @@
                   </div>
                 </div>
               </sc-for>
+
+              <div style="font:700 9px/1 'Space Mono',monospace;letter-spacing:.16em;color:#B0446B;text-transform:uppercase;margin:16px 0 12px;padding-bottom:8px;border-bottom:1px solid rgba(0,0,0,.12);display:flex;justify-content:space-between"><span>SUBJECTIVE · 0–10</span><span style="color:#8A8780">主观喜好</span></div>
+              <sc-for list="{{ loveAxes }}" as="lx" hint-placeholder-count="2">
+                <div style="margin-bottom:10px">
+                  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
+                    <span style="font:600 11px/1 Archivo,sans-serif;color:#1B1B18">{{ lx.zh }} <span style="font:400 8px/1 'Space Mono',monospace;color:#8A8780;letter-spacing:.06em">{{ lx.en }}</span></span>
+                    <span style="font:700 12px/1 'Space Mono',monospace;color:#B0446B">{{ lx.valLabel }}</span>
+                  </div>
+                  <sc-if value="{{ lx.showRef }}" hint-placeholder-val="{{ false }}">
+                    <div>{{ lx.refEl }}</div>
+                  </sc-if>
+                  <div style="display:flex;gap:3px">
+                    <sc-for list="{{ lx.cells }}" as="c" hint-placeholder-count="10">{{ c }}</sc-for>
+                  </div>
+                </div>
+              </sc-for>
             </div>
           </div>
 
@@ -344,6 +360,10 @@
                 <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:11px">
                   <div style="font:700 32px/0.85 'Space Mono',monospace;color:#FF2D3F">{{ dPerf }}</div>
                   <div style="font:400 6.5px/1 'Space Mono',monospace;color:#6f6d5e;letter-spacing:.14em;text-align:right">PERFORMANCE<br>实战指标</div>
+                </div>
+                <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:11px;padding-bottom:11px;border-bottom:1px solid rgba(255,255,255,.08)">
+                  <div style="font:700 26px/0.85 'Space Mono',monospace;color:#E86A93">{{ dLove }}</div>
+                  <div style="font:400 6.5px/1 'Space Mono',monospace;color:#6f6d5e;letter-spacing:.14em;text-align:right">LOVE<br>主观喜好</div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px 14px">
                   <div><div style="font:400 6.5px/1 'Space Mono',monospace;color:#6f6d5e;letter-spacing:.1em">VALUE 性价比</div><div style="font:700 13px/1 'Space Mono',monospace;color:#cfcdbf;margin-top:3px">{{ dValue }}</div></div>
@@ -399,6 +419,7 @@ function fromDb(r){
     footHealth: r.foot_health, grip: r.grip, fit: r.fit_match, response: r.startup_feedback,
     lowProfile: r.low_cog, foreCushion: r.forefoot_cushion, heelCushion: r.heel_cushion,
     transition: r.midsole_stability, comfort: r.comfort,
+    emotion: r.emotion, appearance: r.appearance,
     perf: r.performance_score, value: r.cost_performance, unitPrice: r.unit_price,
     lifespan: r.lifespan_pct, weightPct: r.weight_pct, ownedDays: r.owned_days,
     prefDiff: r.pref_difference, totalHours: r.total_hours || 0, useRate: r.use_rate || 0
@@ -420,6 +441,11 @@ function toDb(s){
     pref_after: nz(s.prefAfter), use_rate: nz(s.useRate)
   };
 }
+// 主观列是后加的；只有当库里确实有这两列时才写出，否则 PostgREST 会报错
+function withLove(row, s, supported) {
+  if (supported) { row.emotion = nz(s.emotion); row.appearance = nz(s.appearance); }
+  return row;
+}
 
 // ===================================================================
 // The Excel formula engine — every derived metric computed LIVE from
@@ -433,7 +459,8 @@ function rawNorm(s) {
     purchaseDate: s.purchaseDate || '',
     footHealth: axNum(s.footHealth), grip: axNum(s.grip), fit: axNum(s.fit), response: axNum(s.response),
     lowProfile: axNum(s.lowProfile), foreCushion: axNum(s.foreCushion), heelCushion: axNum(s.heelCushion),
-    transition: axNum(s.transition), comfort: axNum(s.comfort), perfOverride: axNum(s.perfOverride)
+    transition: axNum(s.transition), comfort: axNum(s.comfort), perfOverride: axNum(s.perfOverride),
+    emotion: axNum(s.emotion), appearance: axNum(s.appearance)
   };
 }
 function parseOwnedDays(str) {            // Z = DAYS(TODAY(), date)
@@ -465,7 +492,9 @@ function metricsOf(r, ctx) {
   const ownedDays = parseOwnedDays(r.purchaseDate);                                               // Z
   const prefDiff = (r.prefBefore != null && r.prefBefore > 0) ? (r.prefAfter - r.prefBefore) / r.prefBefore * 100 : 0; // E
   const useRate = ctx.sumTotals > 0 ? total / ctx.sumTotals * 100 : 0;                            // AG
-  return { total, weightPct, perf, perfAuto, value, unitPrice, lifespan, ownedDays, prefDiff, useRate };
+  const subj = [r.emotion, r.appearance].filter(v => v != null);                                   // 主观：情感 + 外观
+  const love = subj.length ? subj.reduce((a, b) => a + b, 0) / subj.length : null;
+  return { total, weightPct, perf, perfAuto, value, unitPrice, lifespan, ownedDays, prefDiff, useRate, love };
 }
 
 class Component extends DCLogic {
@@ -493,6 +522,7 @@ class Component extends DCLogic {
   async loadData() {
     const { data, error } = await this.sb.from('sneakers').select('*').order('position', { ascending: true });
     if (error) { console.error('load failed', error); this.setState({ ready: true, data: [] }); return; }
+    if (data && data.length) this.loveCols = Object.prototype.hasOwnProperty.call(data[0], 'emotion');
     this.setState({ ready: true, data: (data || []).map(fromDb) });
   }
   async doLogin() {
@@ -512,7 +542,7 @@ class Component extends DCLogic {
   courtStr(s) { return s.indoor && s.outdoor ? '内·外' : s.indoor ? '内场' : s.outdoor ? '外场' : '—'; }
 
   blankForm() {
-    const f = { name: '', status: 'Roster', indoor: true, outdoor: false, size: '', purchaseDate: '', price: '', weight: '', gym: '', indoorHrs: '', outdoorHrs: '', games: '', pointsLog: '', prefBefore: '', prefAfter: '', notes: '', perfOverride: '' };
+    const f = { name: '', status: 'Roster', indoor: true, outdoor: false, size: '', purchaseDate: '', price: '', weight: '', gym: '', indoorHrs: '', outdoorHrs: '', games: '', pointsLog: '', prefBefore: '', prefAfter: '', notes: '', perfOverride: '', emotion: '', appearance: '' };
     (this.axisKeys || []).forEach(k => f[k] = '');
     return f;
   }
@@ -526,6 +556,7 @@ class Component extends DCLogic {
       games: s.games != null ? String(s.games) : '', pointsLog: s.pointsLog || '',
       prefBefore: s.prefBefore != null ? String(s.prefBefore) : '', prefAfter: s.prefAfter != null ? String(s.prefAfter) : '',
       notes: s.desc || '', perfOverride: '',
+      emotion: s.emotion != null ? String(s.emotion) : '', appearance: s.appearance != null ? String(s.appearance) : '',
     });
     this.axisKeys.forEach(k => f[k] = s[k] != null ? String(s[k]) : '');
     return f;
@@ -585,7 +616,8 @@ class Component extends DCLogic {
       weightG: f.weight, price: f.price, prefBefore: f.prefBefore, prefAfter: f.prefAfter,
       purchaseDate: f.purchaseDate, footHealth: f.footHealth, grip: f.grip, fit: f.fit,
       response: f.response, lowProfile: f.lowProfile, foreCushion: f.foreCushion,
-      heelCushion: f.heelCushion, transition: f.transition, comfort: f.comfort, perfOverride: f.perfOverride
+      heelCushion: f.heelCushion, transition: f.transition, comfort: f.comfort, perfOverride: f.perfOverride,
+      emotion: f.emotion, appearance: f.appearance
     });
     const others = this.state.data.filter(s => this.state.editingId == null || s.id !== this.state.editingId).map(rawNorm);
     return metricsOf(formRaw, fleetCtx(others.concat([formRaw])));
@@ -607,11 +639,12 @@ class Component extends DCLogic {
       totalHours: d.total, weightG: this.num(f.weight), purchaseDate: f.purchaseDate || '', ownedDays: d.ownedDays,
       price: this.num(f.price), unitPrice: d.unitPrice, size: f.size || '', value: d.value,
       prefBefore: this.num(f.prefBefore), prefAfter: this.num(f.prefAfter), useRate: d.useRate,
+      emotion: this.num(f.emotion), appearance: this.num(f.appearance),
     };
     this.axisKeys.forEach(k => shoe[k] = this.num(f[k]));
     if (this.state.saving) return;
     this.setState({ saving: true });
-    const row = toDb(shoe);
+    const row = withLove(toDb(shoe), shoe, this.loveCols);
     let res;
     if (editing) res = await this.sb.from('sneakers').update(row).eq('id', this.state.editingId).select();
     else res = await this.sb.from('sneakers').insert(row).select();
@@ -803,8 +836,11 @@ class Component extends DCLogic {
       { en: 'HEEL', zh: '后掌缓震', val: r10(s.heelCushion), pct: clamp((s.heelCushion || 0) * 10) },
       { en: 'TRANS', zh: '中底过渡', val: r10(s.transition), pct: clamp((s.transition || 0) * 10) },
       { en: 'COMFORT', zh: '舒适度', val: r10(s.comfort), pct: clamp((s.comfort || 0) * 10) },
+      { en: 'LOVE', zh: '喜好', val: m.love != null ? m.love.toFixed(2) : '—', pct: clamp((m.love || 0) * 10) },
+      { en: 'EMOTION', zh: '情感', val: r10(s.emotion), pct: clamp((s.emotion || 0) * 10) },
+      { en: 'LOOKS', zh: '外观', val: r10(s.appearance), pct: clamp((s.appearance || 0) * 10) },
     ];
-    const N = 24;
+    const N = data.length ? dataItems(data[0], M[data[0].id] || {}).length : 27;
 
     const GOLD_HOURS = 40;                                   // gold treatment threshold
     const isGold = s => ((M[s.id] || {}).total || 0) > GOLD_HOURS;
@@ -833,12 +869,13 @@ class Component extends DCLogic {
         if (sortKey === 'name') return (s.name || '').toLowerCase();
         if (sortKey === 'price') return s.price || 0;
         const mm = M[s.id] || {};
+        if (sortKey === 'love') return mm.love == null ? -1 : mm.love;
         return sortKey === 'value' ? (mm.value || 0) : sortKey === 'hours' ? (mm.total || 0) : sortKey === 'use' ? (mm.useRate || 0) : sortKey === 'owned' ? (mm.ownedDays || 0) : (mm.perf || 0);
       };
       filtered.sort((a, b) => { const x = kv(a), y = kv(b); if (typeof x === 'string') return sortDir === 'asc' ? x.localeCompare(y) : y.localeCompare(x); return sortDir === 'asc' ? (x - y) : (y - x); });
     }
 
-    const SORTS = [['manual', '手动', 'Manual'], ['perf', '实战', 'Perf'], ['value', '性价比', 'Value'], ['hours', '时长', 'Hours'], ['price', '购入价', 'Price'], ['name', '名称', 'Name']];
+    const SORTS = [['manual', '手动', 'Manual'], ['perf', '实战', 'Perf'], ['love', '喜好', 'Love'], ['value', '性价比', 'Value'], ['hours', '时长', 'Hours'], ['price', '购入价', 'Price'], ['name', '名称', 'Name']];
     const sortControl = h('div', { style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' } }, [
       h('span', { key: 'l', style: { font: "700 9px/1 'Space Mono', monospace", letterSpacing: '.14em', color: '#6f6d5e', textTransform: 'uppercase' } }, 'ORDER 排序'),
       ...SORTS.map(([k, zh, en]) => {
@@ -852,6 +889,7 @@ class Component extends DCLogic {
     // ---- cross analysis: pick two metrics -> XY scatter ----
     const CROSS = [
       { key: 'perf', en: 'PERF', zh: '实战', get: (s, m) => m.perf, fmt: v => v.toFixed(2) },
+      { key: 'love', en: 'LOVE', zh: '喜好', get: (s, m) => m.love, fmt: v => v.toFixed(2) },
       { key: 'value', en: 'VALUE', zh: '性价比', get: (s, m) => m.value, fmt: v => v.toFixed(2) },
       { key: 'hours', en: 'HOURS', zh: '时长', get: (s, m) => m.total, fmt: v => Math.round(v) + 'h' },
       { key: 'use', en: 'USE', zh: '使用率', get: (s, m) => m.useRate, fmt: v => v.toFixed(2) + '%' },
@@ -861,6 +899,8 @@ class Component extends DCLogic {
       { key: 'owned', en: 'OWNED', zh: '天数', get: (s, m) => m.ownedDays, fmt: v => Math.round(v) + 'd' },
       { key: 'weight', en: 'WEIGHT', zh: '重量', get: s => s.weightG, fmt: v => Math.round(v) + 'g' },
       { key: 'games', en: 'GAMES', zh: '场次', get: s => s.games, fmt: v => String(Math.round(v)) },
+      { key: 'emotion', en: 'EMOTION', zh: '情感', get: s => s.emotion, fmt: v => v.toFixed(0) },
+      { key: 'appearance', en: 'LOOKS', zh: '外观', get: s => s.appearance, fmt: v => v.toFixed(0) },
     ];
     const axSel = this.state.crossAxes || [];
     const xDef = CROSS.filter(c => c.key === axSel[0])[0] || null;
@@ -967,6 +1007,18 @@ class Component extends DCLogic {
       return { zh: a.zh, en: a.en, valLabel: val ? String(val) : '–', cells,
                showRef: isActive && val > 0, refEl: (isActive && val > 0) ? refRow(a.key, val) : null };
     });
+    const LOVE_AXES = [{ key: 'emotion', zh: '情感', en: 'Emotion' }, { key: 'appearance', zh: '外观', en: 'Appearance' }];
+    const loveAxes = LOVE_AXES.map(a => {
+      const val = +(F[a.key]) || 0;
+      const cells = Array.from({ length: 10 }, (_, k) => h('div', {
+        key: k, onClick: () => this.setRating(a.key, k + 1),
+        style: { flex: 1, height: 18, borderRadius: 3, cursor: 'pointer', background: k < val ? '#B0446B' : 'rgba(0,0,0,.08)', boxShadow: k < val ? 'inset 0 1px 2px rgba(0,0,0,.22)' : 'none' },
+      }));
+      const isActive = this.state.activeAxis === a.key;
+      return { zh: a.zh, en: a.en, valLabel: val ? String(val) : '–', cells,
+               showRef: isActive && val > 0, refEl: (isActive && val > 0) ? refRow(a.key, val) : null };
+    });
+
     const pf = {}; (this.axisKeys || []).forEach(k => pf[k] = +(F[k]) || 0);
 
     const expShoe = this.state.expandedId != null ? data.find(s => s.id === this.state.expandedId) : null;
@@ -992,7 +1044,8 @@ class Component extends DCLogic {
       formSubtitle: this.state.editingId != null ? (F.name || '') : '新建一双球鞋 / new pair',
       saveLabel: this.state.saving ? 'SAVING 保存中…' : 'SAVE 保存',
       openAdd: () => this.openAdd(), cancelForm: () => this.cancelForm(), commitForm: () => this.commitForm(), deleteShoe: () => this.deleteShoe(),
-      statusRow, courtRow, formAxes, radarForm: this.makeRadar(pf, 220, { labels: true }),
+      statusRow, courtRow, formAxes, loveAxes, radarForm: this.makeRadar(pf, 220, { labels: true }),
+      dLove: d.love != null ? d.love.toFixed(2) : '–',
       fName: F.name || '', fSize: F.size || '', fDate: F.purchaseDate || '', fPrice: F.price || '', fWeight: F.weight || '',
       fGym: F.gym || '', fIndoor: F.indoorHrs || '', fOutdoor: F.outdoorHrs || '', fGames: F.games || '',
       fPrefBefore: F.prefBefore || '', fPrefAfter: F.prefAfter || '', fPoints: F.pointsLog || '', fNotes: F.notes || '', fPerf: F.perfOverride || '',
