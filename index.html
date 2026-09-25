@@ -330,6 +330,9 @@ ld('https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',function(){ld
               </sc-for>
 
               <div style="font:700 9px/1 'Space Mono',monospace;letter-spacing:.16em;color:#B0446B;text-transform:uppercase;margin:16px 0 12px;padding-bottom:8px;border-bottom:1px solid rgba(0,0,0,.12);display:flex;justify-content:space-between"><span>SUBJECTIVE · 0–10</span><span style="color:#8A8780">主观喜好</span></div>
+              <sc-if value="{{ loveUnsaved }}" hint-placeholder-val="{{ false }}">
+                <div style="font:700 8px/1.5 'Space Mono',monospace;color:#E10600;letter-spacing:.05em;margin:-4px 0 10px">⚠ 数据库还没有 emotion / appearance 列，这两项暂时存不下来 · 在 Supabase SQL Editor 运行 db/add_love.sql</div>
+              </sc-if>
               <sc-for list="{{ loveAxes }}" as="lx" hint-placeholder-count="2">
                 <div style="margin-bottom:10px">
                   <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
@@ -394,6 +397,9 @@ ld('https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',function(){ld
               <div style="margin-bottom:10px">{{ footControls }}</div>
               <div id="footmap-host" style="height:420px;background:#16160F;border:1px solid rgba(0,0,0,.25);border-radius:9px;overflow:hidden;position:relative;box-shadow:inset 0 1px 4px rgba(0,0,0,.45)"></div>
               <div style="font:400 7.5px/1.5 'Space Mono',monospace;color:#8A8780;margin-top:7px;letter-spacing:.06em">{{ footHint }}</div>
+              <sc-if value="{{ footUnsaved }}" hint-placeholder-val="{{ false }}">
+                <div style="font:700 8px/1.5 'Space Mono',monospace;color:#E10600;letter-spacing:.05em;margin-top:4px">⚠ 数据库还没有 foot_marks 列，标注暂时存不下来 · 在 Supabase SQL Editor 运行 db/add_foot_marks.sql</div>
+              </sc-if>
               <div style="font:400 7px/1.5 'Space Mono',monospace;color:#6f6d5e;margin-top:2px;letter-spacing:.04em">足部模型 <a href="https://sketchfab.com/3d-models/foot-topology-study-4aa96c9b0a9b4cb1b3740f8e0558ffbc" target="_blank" rel="noopener" style="color:#8A8780">“Foot Topology Study”</a> © <a href="https://sketchfab.com/Johnson-Martin" target="_blank" rel="noopener" style="color:#8A8780">Johnson Martin</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener" style="color:#8A8780">CC BY 4.0</a> · 已合并网格、重新定向与缩放</div>
             </div>
             <div>{{ footViews }}</div>
@@ -1498,6 +1504,7 @@ class Component extends DCLogic {
       statusRow, courtRow, formAxes, loveAxes, radarForm: this.makeRadar(pf, 220, { labels: true }),
       dLove: d.love != null ? d.love.toFixed(2) : '–',
       footControls, footViews, footHint,
+      footUnsaved: this.footCols === false, loveUnsaved: this.loveCols === false,
       fName: F.name || '', fSize: F.size || '', fDate: F.purchaseDate || '', fPrice: F.price || '', fWeight: F.weight || '',
       fGym: F.gym || '', fIndoor: F.indoorHrs || '', fOutdoor: F.outdoorHrs || '', fGames: F.games || '',
       fPrefBefore: F.prefBefore || '', fPrefAfter: F.prefAfter || '', fPoints: F.pointsLog || '', fNotes: F.notes || '', fPerf: F.perfOverride || '',
