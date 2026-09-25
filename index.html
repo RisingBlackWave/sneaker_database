@@ -526,10 +526,10 @@ const FOOT_MODES = {
 };
 const FOOT_MODE_IDX = { bad: 1, pain: 2, good: 3 };
 const FOOT_BASE_HEX = 0xEDEBE4;
+const FOOT_CAP_HEX = 0x4A4740;     // the flat ankle cut, drawn like a section
 const FOOT_BANDS = ['heel', 'mid', 'fore', 'toes'];
 const FOOT_BAND_ZH = { heel: '后跟', mid: '中足', fore: '前掌', toes: '脚趾' };
 const FOOT_SURF = ['sole', 'top', 'medial', 'lateral'];
-const FOOT_SURF_LBL = { sole: ['SOLE', '底'], top: ['TOP', '上面'], medial: ['MEDIAL', '内侧'], lateral: ['LATERAL', '外侧'] };
 const FOOT_LEN = 26;
 
 function lerpKeys(t, keys) {
@@ -555,7 +555,7 @@ function footBand(t) { return t < 0.28 ? 0 : t < 0.55 ? 1 : t < 0.80 ? 2 : 3; }
 
 // Real foot mesh (assets/foot.bin, built by tools/prep_foot.py). Falls back to the
 // parametric foot above if it can't be fetched.
-const FOOT_MODEL_URL = 'assets/foot.bin?v=1';
+const FOOT_MODEL_URL = 'assets/foot.bin?v=2';
 const FOOT_MODEL = { status: 'idle', data: null, waiters: [] };
 function parseFootBin(buf) {
   const dv = new DataView(buf);
@@ -604,16 +604,81 @@ function classifyFoot(pos, nrm, V, medialSign) {
   return { vsurf, vband };
 }
 
+// ---- two feet: the mesh is one foot, its mirror image is the other ----
+const FOOT_KEYS = ['L', 'R'];
+const FOOT_SIDE_ZH = { L: '左', R: '右' };
+const FOOT_GAP = 7.4;                                   // half the centre-to-centre distance (cm)
+const FOOT_X = { L: FOOT_GAP, R: -FOOT_GAP };           // Y up, toes +Z  =>  +X is the wearer's left
+const FOOT_CUTS_Z = [0, 0.28, 0.55, 0.80, 1].map(t => (t - 0.5) * FOOT_LEN);   // heel | mid | fore | toes
+
+function parametricFoot() {
+  const T = window.THREE, S = 110, R = 56, nV = (S + 1) * R;
+  const pos = new Float32Array(nV * 3), p = new T.Vector3();
+  for (let i = 0; i <= S; i++) { const t = i / S; for (let j = 0; j < R; j++) { footPoint(t, j / R * Math.PI * 2, p); const k = i * R + j; pos[3 * k] = p.x; pos[3 * k + 1] = p.y; pos[3 * k + 2] = p.z; } }
+  const idx = new Uint16Array(S * R * 6); let q = 0;
+  for (let i = 0; i < S; i++) for (let j = 0; j < R; j++) { const j2 = (j + 1) % R, a = i * R + j, b = i * R + j2, c = (i + 1) * R + j, d = (i + 1) * R + j2; idx[q++] = a; idx[q++] = b; idx[q++] = c; idx[q++] = b; idx[q++] = d; idx[q++] = c; }
+  const g = new T.BufferGeometry(); g.setAttribute('position', new T.BufferAttribute(pos, 3)); g.setIndex(new T.BufferAttribute(idx, 1)); g.computeVertexNormals();
+  const nrm = new Float32Array(g.getAttribute('normal').array); g.dispose();
+  return { pos, nrm, idx, medialSign: -1, V: nV };      // medial at -x: this one is a left foot
+}
+function mirrorFoot(b) {
+  const pos = new Float32Array(b.pos), nrm = new Float32Array(b.nrm), idx = new b.idx.constructor(b.idx.length);
+  for (let k = 0; k < b.V; k++) { pos[3 * k] = -pos[3 * k]; nrm[3 * k] = -nrm[3 * k]; }
+  for (let i = 0; i < b.idx.length; i += 3) { idx[i] = b.idx[i]; idx[i + 1] = b.idx[i + 2]; idx[i + 2] = b.idx[i + 1]; }   // mirroring flips handedness
+  return { pos, nrm, idx, medialSign: -b.medialSign, V: b.V };
+}
+function footPair(base) { const m = mirrorFoot(base); return base.medialSign > 0 ? { R: base, L: m } : { L: base, R: m }; }
+function footAreas(d) {   // 1/3 of every incident triangle — coverage is measured in area, not vertex count
+  const A = new Float32Array(d.V), P = d.pos, I = d.idx;
+  for (let i = 0; i < I.length; i += 3) {
+    const a = 3 * I[i], b = 3 * I[i + 1], c = 3 * I[i + 2];
+    const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+    const ar = Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 6;
+    A[I[i]] += ar; A[I[i + 1]] += ar; A[I[i + 2]] += ar;
+  }
+  return A;
+}
+// silhouettes straight from the mesh, per slice along the length: outline from above,
+// the weight-bearing print (what touches the ground), the side profile, and the ankle
+function footOutline(d) {
+  const SL = 64, W = FOOT_LEN / SL, CONTACT = 0.9;
+  const box = () => ({ lo: new Float32Array(SL).fill(Infinity), hi: new Float32Array(SL).fill(-Infinity) });
+  const top = box(), print = box(), side = box();
+  let H = 0; for (let k = 0; k < d.V; k++) H = Math.max(H, d.pos[3 * k + 1]);
+  const ank = { x0: Infinity, x1: -Infinity, z0: Infinity, z1: -Infinity };
+  for (let k = 0; k < d.V; k++) {
+    const x = d.pos[3 * k], y = d.pos[3 * k + 1], z = d.pos[3 * k + 2];
+    const b = Math.max(0, Math.min(SL - 1, Math.floor((z + FOOT_LEN / 2) / W)));
+    if (x < top.lo[b]) top.lo[b] = x; if (x > top.hi[b]) top.hi[b] = x;
+    if (y < side.lo[b]) side.lo[b] = y; if (y > side.hi[b]) side.hi[b] = y;
+    if (y < CONTACT) { if (x < print.lo[b]) print.lo[b] = x; if (x > print.hi[b]) print.hi[b] = x; }
+    if (y > H * 0.8) { ank.x0 = Math.min(ank.x0, x); ank.x1 = Math.max(ank.x1, x); ank.z0 = Math.min(ank.z0, z); ank.z1 = Math.max(ank.z1, z); }
+  }
+  const pack = e => {
+    const rows = [];
+    for (let b = 0; b < SL; b++) if (e.lo[b] <= e.hi[b]) rows.push([-FOOT_LEN / 2 + (b + 0.5) * W, e.lo[b], e.hi[b]]);
+    return rows.map((r, i) => { const a = rows[Math.max(0, i - 1)], c = rows[Math.min(rows.length - 1, i + 1)]; return [r[0], (a[1] + r[1] + c[1]) / 3, (a[2] + r[2] + c[2]) / 3]; });
+  };
+  const hasAnkle = H > 9 && ank.x0 < ank.x1;
+  return { top: pack(top), print: pack(print), side: pack(side), height: H,
+           ankle: hasAnkle ? { cx: (ank.x0 + ank.x1) / 2, cz: (ank.z0 + ank.z1) / 2, rx: (ank.x1 - ank.x0) / 2, rz: (ank.z1 - ank.z0) / 2 } : null };
+}
+function footZoneStats(f) {
+  const z = {}; FOOT_SURF.forEach(sf => { z[sf] = {}; FOOT_BANDS.forEach(b => { z[sf][b] = { bad: 0, pain: 0, good: 0, total: 0 }; }); });
+  for (let k = 0; k < f.vmode.length; k++) { const zz = z[f.vsurf[k]][FOOT_BANDS[f.vband[k]]], a = f.varea[k]; zz.total += a; const m = f.vmode[k]; if (m === 1) zz.bad += a; else if (m === 2) zz.pain += a; else if (m === 3) zz.good += a; }
+  FOOT_SURF.forEach(sf => FOOT_BANDS.forEach(b => { const zz = z[sf][b]; ['bad', 'pain', 'good', 'total'].forEach(q => { zz[q] = Math.round(zz[q] * 100) / 100; }); }));
+  return z;
+}
+
 class FootMap {
   constructor(host, marks, onChange, model) {
     const T = window.THREE;
     this.host = host; this.onChange = onChange; this.mode = 'view'; this.size = 1.5;
     this.model = model || null;
-    this.medialSign = this.model ? this.model.medialSign : -1;   // parametric foot: medial at -x
-    // strokes live in world space; if they were drawn on a foot of the other chirality, mirror them
-    const ms = marks && marks.ms != null ? marks.ms : -1;
-    this.migrated = !!(marks && marks.strokes && marks.strokes.length && ms !== this.medialSign);
-    this.strokes = ((marks && marks.strokes) || []).map(st => this.migrated ? Object.assign({}, st, { x: -st.x }) : Object.assign({}, st));
+    // v1 marks held one foot: the real right foot (ms 1) or the old parametric foot (ms -1, a left foot).
+    // Both were drawn in that foot's own frame, which is exactly each foot's local frame here.
+    const legacy = marks && marks.ms === 1 ? 'R' : 'L';
+    this.strokes = ((marks && marks.strokes) || []).map(st => Object.assign({ f: legacy }, st));
     const W = host.clientWidth || 600, H = host.clientHeight || 400;
     this.renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
@@ -621,169 +686,212 @@ class FootMap {
     this.renderer.domElement.style.display = 'block';
     host.appendChild(this.renderer.domElement);
     this.scene = new T.Scene();
-    this.camera = new T.PerspectiveCamera(34, W / H, 0.1, 300);
-    this.camera.position.set(21, 15, 25);
-    this.scene.add(new T.HemisphereLight(0xffffff, 0x6b675e, 0.95));
-    const under = new T.DirectionalLight(0xfff4e6, 0.38); under.position.set(2, -18, 3); this.scene.add(under);
-    const key = new T.DirectionalLight(0xffffff, 0.75); key.position.set(12, 20, 10); this.scene.add(key);
+    this.camera = new T.PerspectiveCamera(34, W / H, 0.1, 400);
+    this.scene.add(new T.HemisphereLight(0xffffff, 0x6b675e, 0.62));
+    const key = new T.DirectionalLight(0xffffff, 1.0); key.position.set(18, 16, 9); this.scene.add(key);
     const fill = new T.DirectionalLight(0xffe9c4, 0.25); fill.position.set(-14, 6, -10); this.scene.add(fill);
-    const disc = new T.Mesh(new T.CircleGeometry(16, 56), new T.MeshBasicMaterial({ color: 0x0c0c09, transparent: true, opacity: 0.6 }));
+    const under = new T.DirectionalLight(0xfff4e6, 0.38); under.position.set(2, -18, 3); this.scene.add(under);
+    const disc = new T.Mesh(new T.CircleGeometry(21, 64), new T.MeshBasicMaterial({ color: 0x0c0c09, transparent: true, opacity: 0.6 }));
     disc.rotation.x = -Math.PI / 2; disc.position.y = -0.06; this.scene.add(disc);
-    this.buildMesh();
-    // frame whatever foot we got: aim a little below mid-height, keep the old 3/4 view direction
-    this.geo.computeBoundingBox();
-    const bb = this.geo.boundingBox, fh = bb.max.y - bb.min.y;
-    const tgt = new T.Vector3(0, fh * 0.36, 0), dir = new T.Vector3(21, 12.4, 25).normalize();
-    this.camera.position.copy(tgt).addScaledVector(dir, Math.max(FOOT_LEN, fh * 1.6) * 1.34);
+    const pair = footPair(this.model || parametricFoot());
+    this.feet = {};
+    FOOT_KEYS.forEach(k => { this.feet[k] = this.buildFoot(k, pair[k]); });
+    this.meshes = FOOT_KEYS.map(k => this.feet[k].mesh);
+    // default view: looking down at your own feet — from behind and above, left foot on the left
+    const fh = Math.max.apply(null, FOOT_KEYS.map(k => this.feet[k].outline.height));
+    const tgt = new T.Vector3(0, fh * 0.25, -0.5), dir = new T.Vector3(0, 0.88, -0.47).normalize();
+    this.fitCamera(tgt, dir);
     this.controls = new T.OrbitControls(this.camera, this.renderer.domElement);
     this.controls.target.copy(tgt); this.controls.enableDamping = true; this.controls.dampingFactor = 0.08;
-    this.controls.minDistance = 12; this.controls.maxDistance = 70; this.controls.update();
+    this.controls.minDistance = 12; this.controls.maxDistance = 90; this.controls.update();
+    // floating L / R tags, pinned to the ground behind each heel
+    this._tmp = new T.Vector3();
+    this.labels = FOOT_KEYS.map(k => {
+      const el = document.createElement('div');
+      el.textContent = k + ' ' + FOOT_SIDE_ZH[k];
+      el.style.cssText = "position:absolute;left:0;top:0;pointer-events:none;transform:translate(-50%,-50%);font:700 10px/1 'Space Mono',monospace;letter-spacing:.12em;color:#EBEBE9;background:rgba(22,22,15,.78);border:1px solid rgba(255,255,255,.2);border-radius:5px;padding:4px 7px;white-space:nowrap";
+      host.appendChild(el); return { k, el };
+    });
     this.ray = new T.Raycaster(); this.ptr = new T.Vector2(); this.painting = false;
     this._down = e => this.onDown(e); this._move = e => this.onMove(e); this._up = () => { this.painting = false; };
     const el = this.renderer.domElement;
     el.addEventListener('pointerdown', this._down); el.addEventListener('pointermove', this._move);
     window.addEventListener('pointerup', this._up);
     el.style.touchAction = 'none'; el.style.cursor = 'grab';
-    const snapped = this.replay();
-    if (this.strokes.length) this.emit();   // refresh zones for this mesh (and persist any migration/snap)
-    this.snapped = snapped;
+    this.snapped = this.replay();
+    if (this.strokes.length) this.emit();   // refresh zones for these meshes (and persist any migration/snap)
     this._ro = new ResizeObserver(() => this.resize()); this._ro.observe(host);
     this.alive = true; this.loop();
   }
-  buildMesh() {
-    if (this.model) return this.buildModelMesh(this.model);
-    const T = window.THREE, S = 110, R = 56, nV = (S + 1) * R;
-    const pos = new Float32Array(nV * 3), col = new Float32Array(nV * 3);
-    this.vband = new Uint8Array(nV); this.vt = new Float32Array(nV);
-    const p = new T.Vector3();
-    for (let i = 0; i <= S; i++) { const t = i / S; for (let j = 0; j < R; j++) { footPoint(t, j / R * Math.PI * 2, p); const k = i * R + j; pos[3 * k] = p.x; pos[3 * k + 1] = p.y; pos[3 * k + 2] = p.z; this.vt[k] = t; } }
-    const idx = [];
-    for (let i = 0; i < S; i++) for (let j = 0; j < R; j++) { const j2 = (j + 1) % R, a = i * R + j, b = i * R + j2, c = (i + 1) * R + j, d = (i + 1) * R + j2; idx.push(a, b, c, b, d, c); }
-    const g = new T.BufferGeometry();
-    g.setAttribute('position', new T.BufferAttribute(pos, 3));
-    g.setAttribute('color', new T.BufferAttribute(col, 3));
-    g.setIndex(idx); g.computeVertexNormals();
-    this.geo = g; this.vmode = new Uint8Array(nV); this.vsurf = new Array(nV);
-    const nrm = g.getAttribute('normal');
-    const cls = classifyFoot(pos, nrm.array, nV, this.medialSign);
-    this.vsurf = cls.vsurf; this.vband = cls.vband;
-    this.mesh = new T.Mesh(g, new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 }));
-    this.scene.add(this.mesh);
-    this.computeAreas();
-    this.resetColors();
-  }
-  buildModelMesh(m) {
-    const T = window.THREE, g = new T.BufferGeometry();
-    g.setAttribute('position', new T.BufferAttribute(m.pos, 3));
-    g.setAttribute('normal', new T.BufferAttribute(m.nrm, 3));
-    g.setAttribute('color', new T.BufferAttribute(new Float32Array(3 * m.V), 3));
-    g.setIndex(new T.BufferAttribute(m.idx, 1));
-    this.geo = g; this.vmode = new Uint8Array(m.V);
-    const cls = classifyFoot(m.pos, m.nrm, m.V, this.medialSign);
-    this.vsurf = cls.vsurf; this.vband = cls.vband;
-    // DoubleSide: the scan is open at the ankle cut, so you can see inside without it vanishing
-    this.mesh = new T.Mesh(g, new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0, side: T.DoubleSide }));
-    this.scene.add(this.mesh);
-    this.computeAreas();
-    this.resetColors();
-  }
-  computeAreas() {
-    const pos = this.geo.getAttribute('position'), idx = this.geo.index.array, A = new Float32Array(pos.count);
-    for (let i = 0; i < idx.length; i += 3) {
-      const a = idx[i], b = idx[i + 1], c = idx[i + 2];
-      const ux = pos.getX(b) - pos.getX(a), uy = pos.getY(b) - pos.getY(a), uz = pos.getZ(b) - pos.getZ(a);
-      const vx = pos.getX(c) - pos.getX(a), vy = pos.getY(c) - pos.getY(a), vz = pos.getZ(c) - pos.getZ(a);
-      const ar = Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 6;
-      A[a] += ar; A[b] += ar; A[c] += ar;
+  // frame the pair tightly: find the closest distance that fits real surface samples, re-centre
+  // the view on what's actually visible, and fit again (a bounding box is mostly air over the toes)
+  fitCamera(tgt, dir) {
+    const T = window.THREE, cam = this.camera, pts = [], v = new T.Vector3();
+    FOOT_KEYS.forEach(k => { const p = this.feet[k].geo.getAttribute('position'), ox = FOOT_X[k]; for (let i = 0; i < p.count; i += 12) pts.push(new T.Vector3(p.getX(i) + ox, p.getY(i), p.getZ(i))); });
+    const place = d => { cam.position.copy(tgt).addScaledVector(dir, d); cam.lookAt(tgt); cam.updateMatrixWorld(); };
+    const box = () => { const b = { x0: 9, x1: -9, y0: 9, y1: -9 }; pts.forEach(p => { v.copy(p).project(cam); if (v.x < b.x0) b.x0 = v.x; if (v.x > b.x1) b.x1 = v.x; if (v.y < b.y0) b.y0 = v.y; if (v.y > b.y1) b.y1 = v.y; }); return b; };
+    const fits = d => { place(d); const b = box(); return b.x0 > -0.86 && b.x1 < 0.86 && b.y0 > -0.8 && b.y1 < 0.86; };
+    const search = () => { let lo = 8, hi = 260; for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (fits(m)) hi = m; else lo = m; } return hi; };
+    let d = search();
+    for (let it = 0; it < 3; it++) {
+      place(d); const b = box();
+      const hh = d * Math.tan(cam.fov * Math.PI / 360), hw = hh * cam.aspect;
+      const right = new T.Vector3().setFromMatrixColumn(cam.matrixWorld, 0), up = new T.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
+      tgt.addScaledVector(right, (b.x0 + b.x1) / 2 * hw).addScaledVector(up, (b.y0 + b.y1) / 2 * hh);
+      d = search();
     }
-    this.varea = A;
+    place(d);
   }
-  resetColors() { const T = window.THREE, c = this.geo.getAttribute('color'), b = new T.Color(FOOT_BASE_HEX); for (let k = 0; k < c.count; k++) c.setXYZ(k, b.r, b.g, b.b); this.vmode.fill(0); c.needsUpdate = true; }
+  buildFoot(k, d) {
+    const T = window.THREE, g = new T.BufferGeometry();
+    g.setAttribute('position', new T.BufferAttribute(d.pos, 3));
+    g.setAttribute('normal', new T.BufferAttribute(d.nrm, 3));
+    g.setAttribute('color', new T.BufferAttribute(new Float32Array(3 * d.V), 3));
+    g.setIndex(new T.BufferAttribute(d.idx, 1));
+    const cls = classifyFoot(d.pos, d.nrm, d.V, d.medialSign);
+    const mesh = new T.Mesh(g, new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0, side: T.DoubleSide }));
+    mesh.position.x = FOOT_X[k]; mesh.userData.foot = k;
+    this.scene.add(mesh);
+    const f = { k, geo: g, mesh, vsurf: cls.vsurf, vband: cls.vband, vmode: new Uint8Array(d.V), varea: footAreas(d), medialSign: d.medialSign, outline: footOutline(d) };
+    // the flat cut above the ankle is a section, not skin: it keeps its own colour, takes no paint, adds no area
+    f.cap = new Uint8Array(d.V);
+    if (f.outline.ankle) { const H = f.outline.height; for (let i = 0; i < d.V; i++) if (d.nrm[3 * i + 1] > 0.92 && d.pos[3 * i + 1] > H * 0.86) { f.cap[i] = 1; f.varea[i] = 0; } }
+    this.paintBase(f);
+    return f;
+  }
+  paintBase(f) { const T = window.THREE, c = f.geo.getAttribute('color'), b = new T.Color(FOOT_BASE_HEX), s = new T.Color(FOOT_CAP_HEX); for (let k = 0; k < c.count; k++) { const q = f.cap[k] ? s : b; c.setXYZ(k, q.r, q.g, q.b); } f.vmode.fill(0); c.needsUpdate = true; }
+  resetColors() { FOOT_KEYS.forEach(k => this.paintBase(this.feet[k])); }
   applyStroke(st) {
-    const T = window.THREE, c = this.geo.getAttribute('color'), pos = this.geo.getAttribute('position');
+    const f = this.feet[st.f]; if (!f) return 0;
+    const c = f.geo.getAttribute('color'), pos = f.geo.getAttribute('position');
     const r2 = st.r * st.r, mi = st.m === 'erase' ? 0 : (FOOT_MODE_IDX[st.m] || 0);
-    const colr = new T.Color(mi ? FOOT_MODES[st.m].hex : FOOT_BASE_HEX);
+    const colr = new window.THREE.Color(mi ? FOOT_MODES[st.m].hex : FOOT_BASE_HEX);
     let hits = 0;
-    for (let k = 0; k < c.count; k++) { const dx = pos.getX(k) - st.x, dy = pos.getY(k) - st.y, dz = pos.getZ(k) - st.z; if (dx * dx + dy * dy + dz * dz <= r2) { c.setXYZ(k, colr.r, colr.g, colr.b); this.vmode[k] = mi; hits++; } }
+    for (let k = 0; k < c.count; k++) { if (f.cap[k]) continue; const dx = pos.getX(k) - st.x, dy = pos.getY(k) - st.y, dz = pos.getZ(k) - st.z; if (dx * dx + dy * dy + dz * dz <= r2) { c.setXYZ(k, colr.r, colr.g, colr.b); f.vmode[k] = mi; hits++; } }
     c.needsUpdate = true;
     return hits;
   }
-  nearestVertex(x, y, z) {
-    const pos = this.geo.getAttribute('position'); let best = -1, bd = Infinity;
-    for (let k = 0; k < pos.count; k++) { const dx = pos.getX(k) - x, dy = pos.getY(k) - y, dz = pos.getZ(k) - z, d = dx * dx + dy * dy + dz * dz; if (d < bd) { bd = d; best = k; } }
+  nearestVertex(fk, x, y, z) {
+    const f = this.feet[fk], pos = f.geo.getAttribute('position'); let best = -1, bd = Infinity;
+    for (let k = 0; k < pos.count; k++) { if (f.cap[k]) continue; const dx = pos.getX(k) - x, dy = pos.getY(k) - y, dz = pos.getZ(k) - z, d = dx * dx + dy * dy + dz * dz; if (d < bd) { bd = d; best = k; } }
     return best;
   }
   // strokes drawn on a different mesh can sit just off this surface; pull those onto the nearest point
   replay() {
     this.resetColors(); let snapped = 0;
-    const pos = this.geo.getAttribute('position');
     this.strokes.forEach(st => {
+      if (!this.feet[st.f]) return;
       if (this.applyStroke(st) === 0) {
-        const k = this.nearestVertex(st.x, st.y, st.z);
+        const pos = this.feet[st.f].geo.getAttribute('position'), k = this.nearestVertex(st.f, st.x, st.y, st.z);
         if (k >= 0) { st.x = +pos.getX(k).toFixed(2); st.y = +pos.getY(k).toFixed(2); st.z = +pos.getZ(k).toFixed(2); this.applyStroke(st); snapped++; }
       }
     });
     return snapped;
   }
-  zones() {
-    const z = {}; FOOT_SURF.forEach(sf => { z[sf] = {}; FOOT_BANDS.forEach(b => { z[sf][b] = { bad: 0, pain: 0, good: 0, total: 0 }; }); });
-    for (let k = 0; k < this.vmode.length; k++) { const zz = z[this.vsurf[k]][FOOT_BANDS[this.vband[k]]], a = this.varea[k]; zz.total += a; const m = this.vmode[k]; if (m === 1) zz.bad += a; else if (m === 2) zz.pain += a; else if (m === 3) zz.good += a; }
-    FOOT_SURF.forEach(sf => FOOT_BANDS.forEach(b => { const zz = z[sf][b]; ['bad', 'pain', 'good', 'total'].forEach(q => { zz[q] = Math.round(zz[q] * 100) / 100; }); }));
-    return z;
+  zones() { const z = {}; FOOT_KEYS.forEach(k => { z[k] = footZoneStats(this.feet[k]); }); return z; }
+  counts() { const n = { L: 0, R: 0 }; this.strokes.forEach(st => { if (n[st.f] != null) n[st.f]++; }); return n; }
+  outlines() { return { L: this.feet.L.outline, R: this.feet.R.outline }; }
+  signs() { return { L: this.feet.L.medialSign, R: this.feet.R.medialSign }; }
+  emit() { clearTimeout(this._emitT); this._emitT = setTimeout(() => { this.onChange && this.onChange({ v: 2, strokes: this.strokes.slice(), zones: this.zones() }); }, 120); }
+  hit(e) {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    this.ptr.x = ((e.clientX - r.left) / r.width) * 2 - 1; this.ptr.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+    this.ray.setFromCamera(this.ptr, this.camera);
+    const h = this.ray.intersectObjects(this.meshes, false); if (!h.length) return null;
+    const o = h[0].object; return { foot: o.userData.foot, p: o.worldToLocal(h[0].point.clone()) };
   }
-  emit() { clearTimeout(this._emitT); this._emitT = setTimeout(() => { this.onChange && this.onChange(this.strokes.slice(), this.zones(), this.medialSign); }, 120); }
-  hit(e) { const r = this.renderer.domElement.getBoundingClientRect(); this.ptr.x = ((e.clientX - r.left) / r.width) * 2 - 1; this.ptr.y = -((e.clientY - r.top) / r.height) * 2 + 1; this.ray.setFromCamera(this.ptr, this.camera); const h = this.ray.intersectObject(this.mesh, false); return h.length ? h[0] : null; }
-  paintAt(e) { const h = this.hit(e); if (!h) return; this.paintPoint(h.point.x, h.point.y, h.point.z); }
-  paintPoint(x, y, z) { const st = { x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2), r: this.size, m: this.mode }; this.strokes.push(st); this.applyStroke(st); this.emit(); }
+  paintAt(e) { const h = this.hit(e); if (h) this.paintPoint(h.foot, h.p.x, h.p.y, h.p.z); }
+  paintPoint(fk, x, y, z) { const st = { f: fk, x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2), r: this.size, m: this.mode }; if (!this.applyStroke(st)) return; this.strokes.push(st); this.emit(); }
   onDown(e) { if (this.mode === 'view' || e.button !== 0) return; this.painting = true; this.paintAt(e); e.preventDefault(); }
   onMove(e) { if (!this.painting || this.mode === 'view') return; this.paintAt(e); }
   setMode(m) { this.mode = m; if (this.controls) this.controls.enabled = (m === 'view'); this.renderer.domElement.style.cursor = m === 'view' ? 'grab' : 'crosshair'; }
   setSize(s) { this.size = s; }
   clear() { this.strokes = []; this.resetColors(); this.emit(); }
   resize() { const W = this.host.clientWidth, H = this.host.clientHeight; if (!W || !H) return; this.renderer.setSize(W, H); this.camera.aspect = W / H; this.camera.updateProjectionMatrix(); }
-  loop() { if (!this.alive) return; this.controls.update(); this.renderer.render(this.scene, this.camera); this._raf = requestAnimationFrame(() => this.loop()); }
-  dispose() { this.alive = false; cancelAnimationFrame(this._raf); clearTimeout(this._emitT); const el = this.renderer.domElement; el.removeEventListener('pointerdown', this._down); el.removeEventListener('pointermove', this._move); window.removeEventListener('pointerup', this._up); if (this._ro) this._ro.disconnect(); this.controls.dispose(); this.geo.dispose(); this.mesh.material.dispose(); this.renderer.dispose(); if (el.parentNode) el.parentNode.removeChild(el); }
+  placeLabels() {
+    const W = this.host.clientWidth, H = this.host.clientHeight, v = this._tmp;
+    this.labels.forEach(l => {
+      v.set(FOOT_X[l.k], 0, -FOOT_LEN / 2 - 2.2).project(this.camera);
+      const on = v.z > -1 && v.z < 1;
+      l.el.style.display = on ? 'block' : 'none';
+      if (on) { l.el.style.left = Math.max(26, Math.min(W - 26, (v.x + 1) / 2 * W)).toFixed(1) + 'px'; l.el.style.top = Math.max(14, Math.min(H - 14, (1 - v.y) / 2 * H)).toFixed(1) + 'px'; }
+    });
+  }
+  loop() { if (!this.alive) return; this.controls.update(); this.renderer.render(this.scene, this.camera); this.placeLabels(); this._raf = requestAnimationFrame(() => this.loop()); }
+  dispose() {
+    this.alive = false; cancelAnimationFrame(this._raf); clearTimeout(this._emitT);
+    const el = this.renderer.domElement;
+    el.removeEventListener('pointerdown', this._down); el.removeEventListener('pointermove', this._move); window.removeEventListener('pointerup', this._up);
+    if (this._ro) this._ro.disconnect();
+    this.controls.dispose();
+    FOOT_KEYS.forEach(k => { this.feet[k].geo.dispose(); this.feet[k].mesh.material.dispose(); });
+    this.labels.forEach(l => { if (l.el.parentNode) l.el.parentNode.removeChild(l.el); });
+    this.renderer.dispose(); if (el.parentNode) el.parentNode.removeChild(el);
+  }
 }
 
-// 2D shoe views: 4 silhouettes, each split into the same 4 length bands as the 3D foot.
-const FOOT_SIL = {
-  print: 'M50,3 C64,3 72,12 74,22 C76,34 72,44 70,58 C69,70 66,86 55,96 C48,99 40,99 34,94 C26,86 28,68 30,56 C31,42 26,32 28,20 C31,9 40,3 50,3 Z',
-  side:  'M4,84 C6,72 18,64 32,60 C46,56 56,48 64,40 C70,33 74,28 82,27 C90,26 94,30 93,42 L94,72 C94,80 92,88 86,90 L12,91 C7,91 4,88 4,84 Z',
-};
-function footViewsSvg(h, zones) {
-  const pick = zz => { if (!zz || !zz.total) return null; const best = ['bad', 'pain', 'good'].map(m => [m, zz[m]]).sort((a, b) => b[1] - a[1])[0]; const cov = best[1] / zz.total; return cov >= 0.03 ? { m: best[0], cov } : null; };
-  const view = (sf) => {
-    const isSide = sf === 'medial' || sf === 'lateral';
-    const sil = isSide ? FOOT_SIL.side : FOOT_SIL.print;
-    const tf = sf === 'lateral' ? 'translate(100,0) scale(-1,1)' : undefined;
-    const cid = 'fclip-' + sf;
-    // toes→heel: print top→bottom ; side left→right (toe at left; lateral mirrored)
-    const cuts = [0, 0.20, 0.45, 0.72, 1.0], order = ['toes', 'fore', 'mid', 'heel'];
-    const rects = order.map((band, i) => {
-      const a = cuts[i], b = cuts[i + 1];
-      const zz = zones && zones[sf] ? zones[sf][band] : null; const r = pick(zz);
-      let x, y, w, hh;
-      if (isSide) { const L = 4 + a * 92, Rr = 4 + b * 92; x = sf === 'lateral' ? 100 - Rr : L; y = 20; w = Rr - L; hh = 76; }
-      else { x = 20; y = 2 + a * 96; w = 60; hh = (b - a) * 96; }
-      return h('rect', { key: band, x, y, width: w, height: hh, clipPath: 'url(#' + cid + ')', fill: r ? FOOT_MODES[r.m].css : 'transparent', fillOpacity: r ? Math.min(0.92, 0.28 + r.cov * 2.2) : 0 });
-    });
-    const seps = cuts.slice(1, 4).map((c, i) => isSide
-      ? h('line', { key: 's' + i, x1: sf === 'lateral' ? 100 - (4 + c * 92) : 4 + c * 92, y1: 20, x2: sf === 'lateral' ? 100 - (4 + c * 92) : 4 + c * 92, y2: 96, stroke: 'rgba(255,255,255,.14)', strokeWidth: 0.8, strokeDasharray: '2 2', clipPath: 'url(#' + cid + ')' })
-      : h('line', { key: 's' + i, x1: 18, y1: 2 + c * 96, x2: 82, y2: 2 + c * 96, stroke: 'rgba(255,255,255,.14)', strokeWidth: 0.8, strokeDasharray: '2 2', clipPath: 'url(#' + cid + ')' }));
-    const extras = [];
-    if (sf === 'top') extras.push(h('ellipse', { key: 'collar', cx: 50, cy: 82, rx: 12, ry: 7, fill: 'none', stroke: 'rgba(255,255,255,.35)', strokeWidth: 1 }));
-    if (sf === 'sole') [30, 44, 60].forEach((yy, i) => extras.push(h('line', { key: 't' + i, x1: 34, y1: yy, x2: 68, y2: yy, stroke: 'rgba(255,255,255,.18)', strokeWidth: 1.2, clipPath: 'url(#' + cid + ')' })));
-    return h('div', { key: sf, style: { background: '#16160F', borderRadius: 9, padding: '8px 9px 6px' } }, [
-      h('div', { key: 'l', style: { display: 'flex', justifyContent: 'space-between', font: "700 7.5px/1 'Space Mono', monospace", letterSpacing: '.14em', color: '#8A8780', marginBottom: 4 } }, [h('span', { key: 'e' }, FOOT_SURF_LBL[sf][0]), h('span', { key: 'z', style: { color: '#cfcdbf' } }, FOOT_SURF_LBL[sf][1])]),
-      h('svg', { key: 'v', viewBox: '0 0 100 100', width: '100%', style: { display: 'block' } }, [
-        h('defs', { key: 'd' }, [h('clipPath', { key: 'c', id: cid }, [h('path', { d: sil, transform: tf })])]),
-        ...rects, ...seps, ...extras,
-        h('path', { key: 'o', d: sil, transform: tf, fill: 'none', stroke: 'rgba(255,255,255,.6)', strokeWidth: 1.3, strokeLinejoin: 'round' }),
-      ]),
-    ]);
-  };
+// ---- 2D views: each panel shows the pair, L on the left, R on the right ----
+//  SOLE / TOP  : seen from above (like a plantar pressure map), big toes toward the middle
+//  MEDIAL      : inner sides, toes pointing to the middle      LATERAL: outer sides
+function footPickZone(zz) {
+  if (!zz || !zz.total) return null;
+  const best = ['bad', 'pain', 'good'].map(m => [m, zz[m]]).sort((a, b) => b[1] - a[1])[0];
+  const cov = best[1] / zz.total;
+  // ignore brush spill: under 3% of the zone, or under 0.4 cm² (the smallest dab covers ~2.5 cm²)
+  return cov >= 0.03 && best[1] >= 0.4 ? { m: best[0], cov } : null;
+}
+function footMiniSvg(h, view, fk, outline, zones, medialSign) {
+  const K = 3.8, side = view === 'medial' || view === 'lateral', cid = 'fclip-' + view + '-' + fk;
+  let W, H, U, Vv, pts;
+  if (!side) {
+    W = 50; H = 104; U = x => 25 - x * K; Vv = z => 52 - z * K;       // from above: screen-right is -x, toes up
+    const e = outline.top;
+    pts = e.map(r => [U(r[1]), Vv(r[0])]).concat(e.slice().reverse().map(r => [U(r[2]), Vv(r[0])]));
+  } else {
+    W = 104; H = 60;
+    const sv = view === 'medial' ? medialSign : -medialSign;           // the side the viewer stands on
+    U = z => 52 - sv * z * K; Vv = y => 57 - y * K;
+    const e = outline.side;
+    pts = e.map(r => [U(r[0]), Vv(r[2])]).concat(e.slice().reverse().map(r => [U(r[0]), Vv(r[1])]));
+  }
+  const path = pl => 'M' + pl.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' L') + ' Z';
+  const d = path(pts);
+  const rects = FOOT_BANDS.map((band, i) => {
+    const z0 = FOOT_CUTS_Z[i], z1 = FOOT_CUTS_Z[i + 1];
+    const zz = zones && zones[fk] && zones[fk][view] ? zones[fk][view][band] : null, r = footPickZone(zz);
+    const g = side ? { x: Math.min(U(z0), U(z1)), y: 0, width: Math.abs(U(z1) - U(z0)), height: H } : { x: 0, y: Math.min(Vv(z0), Vv(z1)), width: W, height: Math.abs(Vv(z1) - Vv(z0)) };
+    return h('rect', Object.assign({ key: band, clipPath: 'url(#' + cid + ')', fill: r ? FOOT_MODES[r.m].css : 'transparent', fillOpacity: r ? Math.min(0.92, 0.28 + r.cov * 2.2) : 0 }, g));
+  });
+  const seps = [1, 2, 3].map(i => { const z = FOOT_CUTS_Z[i]; return side
+    ? h('line', { key: 's' + i, x1: U(z), y1: 0, x2: U(z), y2: H, stroke: 'rgba(255,255,255,.14)', strokeWidth: 0.7, strokeDasharray: '2 2', clipPath: 'url(#' + cid + ')' })
+    : h('line', { key: 's' + i, x1: 0, y1: Vv(z), x2: W, y2: Vv(z), stroke: 'rgba(255,255,255,.14)', strokeWidth: 0.7, strokeDasharray: '2 2', clipPath: 'url(#' + cid + ')' }); });
+  const extras = [];
+  if (view === 'sole' && outline.print.length > 3) {     // the weight-bearing print: the arch shows as the gap
+    const e = outline.print;
+    extras.push(h('path', { key: 'print', d: path(e.map(r => [U(r[1]), Vv(r[0])]).concat(e.slice().reverse().map(r => [U(r[2]), Vv(r[0])]))), fill: 'none', stroke: 'rgba(255,255,255,.3)', strokeWidth: 0.8, strokeDasharray: '1.6 1.4' }));
+  }
+  if (view === 'top' && outline.ankle) {
+    const a = outline.ankle;
+    extras.push(h('ellipse', { key: 'ank', cx: U(a.cx), cy: Vv(a.cz), rx: a.rx * K, ry: a.rz * K, fill: 'none', stroke: 'rgba(255,255,255,.34)', strokeWidth: 0.9 }));
+  }
+  return h('svg', { key: 'v', viewBox: '0 0 ' + W + ' ' + H, width: '100%', style: { display: 'block' } }, [
+    h('defs', { key: 'd' }, [h('clipPath', { key: 'c', id: cid }, [h('path', { d })])]),
+    ...rects, ...seps, ...extras,
+    h('path', { key: 'o', d, fill: 'none', stroke: 'rgba(255,255,255,.62)', strokeWidth: 1.1, strokeLinejoin: 'round' }),
+  ]);
+}
+function footViewsSvg(h, zones, outlines, signs) {
+  const panel = (view, en, zh) => h('div', { key: view, style: { background: '#16160F', borderRadius: 9, padding: '8px 9px 6px' } }, [
+    h('div', { key: 'l', style: { display: 'flex', justifyContent: 'space-between', font: "700 7.5px/1 'Space Mono', monospace", letterSpacing: '.14em', color: '#8A8780', marginBottom: 5 } }, [h('span', { key: 'e' }, en), h('span', { key: 'z', style: { color: '#cfcdbf' } }, zh)]),
+    h('div', { key: 'p', style: { display: 'flex', gap: view === 'sole' || view === 'top' ? 4 : 8, alignItems: 'flex-end' } }, FOOT_KEYS.map(fk => h('div', { key: fk, style: { flex: 1, minWidth: 0 } }, [
+      outlines ? footMiniSvg(h, view, fk, outlines[fk], zones, signs[fk]) : h('div', { key: 'ph', style: { height: view === 'sole' || view === 'top' ? 96 : 40 } }),
+      h('div', { key: 'c', style: { font: "700 7px/1 'Space Mono', monospace", letterSpacing: '.12em', color: '#6f6d5e', textAlign: 'center', marginTop: 4 } }, fk + ' ' + FOOT_SIDE_ZH[fk]),
+    ]))),
+  ]);
   return h('div', {}, [
-    h('div', { key: 'g', style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, FOOT_SURF.map(view)),
+    h('div', { key: 'r1', style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, [panel('sole', 'SOLE', '底'), panel('top', 'TOP', '上面')]),
+    h('div', { key: 'r2', style: { marginTop: 10 } }, [panel('medial', 'MEDIAL', '内侧')]),
+    h('div', { key: 'r3', style: { marginTop: 10 } }, [panel('lateral', 'LATERAL', '外侧')]),
     h('div', { key: 'lg', style: { display: 'flex', gap: 12, justifyContent: 'center', marginTop: 9, font: "400 7.5px/1 'Space Mono', monospace", letterSpacing: '.08em', color: '#8A8780' } },
       Object.keys(FOOT_MODES).map(m => h('span', { key: m, style: { display: 'inline-flex', alignItems: 'center', gap: 4 } }, [h('span', { key: 'd', style: { width: 7, height: 7, borderRadius: 2, background: FOOT_MODES[m].css, display: 'inline-block' } }), FOOT_MODES[m].zh + ' ' + FOOT_MODES[m].en]))),
   ]);
@@ -843,7 +951,7 @@ class Component extends DCLogic {
       this.footKey = key;
       try {
         this.foot = new FootMap(host, marks,
-          (strokes, zones, ms) => this.setForm('footMarks', { strokes, zones, ms }),
+          marks => this.setForm('footMarks', marks),
           FOOT_MODEL.status === 'ready' ? FOOT_MODEL.data : null);
       } catch (e) { console.error('FootMap failed', e); this.foot = null; return; }
       this.forceUpdate();   // hint text depends on which foot got built
@@ -1353,10 +1461,14 @@ class Component extends DCLogic {
       h('span', { key: 'sp2', style: { flex: 1 } }),
       btn('清除 CLEAR', false, '#E10600', () => this.clearFoot(), { color: '#E10600', borderColor: 'rgba(225,6,0,.45)', background: 'transparent' }),
     ]);
-    const footViews = footViewsSvg(h, (F.footMarks && F.footMarks.zones) || null);
-    const footStrokes = (F.footMarks && F.footMarks.strokes) ? F.footMarks.strokes.length : 0;
-    const footWhich = this.foot ? ((this.foot.model ? '真实足部模型 · ' : '简化足部模型 · ') + (this.foot.medialSign > 0 ? '右脚' : '左脚')) : '';
-    const footHint = (FOOT_MODEL.status === 'loading' || FOOT_MODEL.status === 'idle') ? '加载足部模型… loading foot model' : fm === 'view' ? footWhich + '   |   拖动旋转 · 滚轮缩放 · 选一支画笔开始标注' : (fm === 'erase' ? '在脚上拖动擦掉标注 · 切回 VIEW 可旋转' : '在脚上拖动涂画「' + FOOT_MODES[fm].zh + '」 · 切回 VIEW 可旋转') + (footStrokes ? '   |   ' + footStrokes + ' 笔' : '');
+    const zones2 = (F.footMarks && F.footMarks.v === 2) ? F.footMarks.zones : null;
+    const footViews = footViewsSvg(h, zones2, this.foot ? this.foot.outlines() : null, this.foot ? this.foot.signs() : null);
+    const fc = this.foot ? this.foot.counts() : { L: 0, R: 0 };
+    const footStrokes = fc.L + fc.R;
+    const footWhich = this.foot ? ((this.foot.model ? '真实足部模型' : '简化足部模型') + ' · 左右双脚') : '';
+    const footCount = footStrokes ? '   |   L ' + fc.L + ' 笔 · R ' + fc.R + ' 笔' : '';
+    const footHint = (FOOT_MODEL.status === 'loading' || FOOT_MODEL.status === 'idle') ? '加载足部模型… loading foot model'
+      : (fm === 'view' ? footWhich + '   |   拖动旋转 · 滚轮缩放 · 选一支画笔开始标注' : fm === 'erase' ? '在脚上拖动擦掉标注 · 切回 VIEW 可旋转' : '在脚上拖动涂画「' + FOOT_MODES[fm].zh + '」 · 切回 VIEW 可旋转') + footCount;
 
     const pf = {}; (this.axisKeys || []).forEach(k => pf[k] = +(F[k]) || 0);
 

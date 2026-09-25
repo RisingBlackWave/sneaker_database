@@ -11,7 +11,9 @@ What it does
      is used, so a right foot stays a right foot.
   3. Works out which X side is medial (big-toe side) from three independent cues
      and records it, so the app can label medial/lateral and migrate old strokes.
-  4. Writes positions (int16, /1000), normals (int8, /127) and uint16 indices.
+  4. Welds duplicate vertices along submesh seams, then caps any open boundary
+     (e.g. the ankle cut) with a flat section, so the foot is a closed solid.
+  5. Writes positions (int16, /1000), normals (int8, /127) and uint16 indices.
 
 Binary layout (little-endian)
   0  'SNKF'            4  u16 version=1, u16 flags=0
@@ -89,6 +91,7 @@ def subtree_meshes(J, root):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('glb'); ap.add_argument('--node'); ap.add_argument('--out', default='assets/foot.bin')
+    ap.add_argument('--no-cap', action='store_true', help='leave open boundaries open')
     args = ap.parse_args()
     J, BIN = load_glb(args.glb)
     nodes = J['nodes']; parent = {}
@@ -169,7 +172,71 @@ def main():
     print('foot      : %s foot' % ('right' if medial > 0 else 'left'))
     height = max(q[1] for q in Q); width = max(q[0] for q in Q) - min(q[0] for q in Q)
     print('frame     : length %.1f  height %.1f  width %.1f  (units ~ cm)' % (LENGTH, height, width))
-    print('mesh      : %d verts, %d tris' % (len(Q), len(I) // 3))
+
+
+    # ---- weld seam duplicates (submeshes split by material share border vertices) ----
+    wkey, remap, WQ, WN = {}, [0] * len(Q), [], []
+    for k, q in enumerate(Q):
+        kk = (round(q[0] * 200), round(q[1] * 200), round(q[2] * 200))
+        if kk not in wkey:
+            wkey[kk] = len(WQ); WQ.append(list(q)); WN.append([0.0, 0.0, 0.0])
+        w = wkey[kk]; remap[k] = w
+        WN[w] = [WN[w][i] + NN[k][i] for i in range(3)]
+    for n in WN:
+        L = math.sqrt(sum(v * v for v in n)) or 1
+        n[:] = [v / L for v in n]
+    WI = []
+    for i in range(0, len(I), 3):
+        t = [remap[I[i]], remap[I[i + 1]], remap[I[i + 2]]]
+        if len(set(t)) == 3: WI += t
+    print('weld      : %d -> %d verts' % (len(Q), len(WQ)))
+    Q, NN, I = WQ, WN, WI
+
+    # ---- cap open boundaries with a flat section ----
+    from collections import defaultdict
+    ecount = defaultdict(int); directed = {}
+    for i in range(0, len(I), 3):
+        t = I[i:i + 3]
+        for a, b in ((t[0], t[1]), (t[1], t[2]), (t[2], t[0])):
+            ecount[(min(a, b), max(a, b))] += 1; directed[(a, b)] = True
+    bnext = {}
+    for (a, b), n in ecount.items():
+        if n == 1:   # boundary edge; walk it opposite to its triangle so the cap faces outward
+            if (a, b) in directed: bnext[b] = a
+            else: bnext[a] = b
+    loops, seen = [], set()
+    for s0 in list(bnext):
+        if s0 in seen: continue
+        loop, cur = [], s0
+        while cur not in seen and cur in bnext:
+            seen.add(cur); loop.append(cur); cur = bnext[cur]
+        if len(loop) >= 3: loops.append(loop)
+    if loops and not args.no_cap:
+        mc = [sum(q[i] for q in Q) / len(Q) for i in range(3)]
+        for loop in loops:
+            pts = [Q[v] for v in loop]
+            c = [sum(p[i] for p in pts) / len(pts) for i in range(3)]
+            n = [0.0, 0.0, 0.0]                      # Newell normal of the loop
+            for j in range(len(pts)):
+                p0, p1 = pts[j], pts[(j + 1) % len(pts)]
+                n[0] += (p0[1] - p1[1]) * (p0[2] + p1[2]); n[1] += (p0[2] - p1[2]) * (p0[0] + p1[0]); n[2] += (p0[0] - p1[0]) * (p0[1] + p1[1])
+            L = math.sqrt(sum(v * v for v in n)) or 1; n = [v / L for v in n]
+            if sum(n[i] * (c[i] - mc[i]) for i in range(3)) < 0:
+                n = [-v for v in n]; pts = pts[::-1]
+            base = len(Q); Q.append(c); NN.append(n)
+            for p in pts: Q.append(list(p)); NN.append(list(n))   # own rim copies: crisp edge at the cut
+            m = len(pts)
+            for j in range(m):
+                a, b = base + 1 + j, base + 1 + (j + 1) % m
+                u = [Q[a][i] - c[i] for i in range(3)]; w = [Q[b][i] - c[i] for i in range(3)]
+                cr = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]]
+                I += [base, a, b] if sum(cr[i] * n[i] for i in range(3)) >= 0 else [base, b, a]
+        print('cap       : %d open boundar%s closed (%s edges)' % (len(loops), 'y' if len(loops) == 1 else 'ies', ', '.join(str(len(l)) for l in loops)))
+    elif loops:
+        print('cap       : %d open boundaries left open (--no-cap)' % len(loops))
+    else:
+        print('cap       : mesh already closed')
+    if len(Q) >= 65536: sys.exit('too many vertices after capping (%d)' % len(Q))
 
     # ---- write ----
     V, IC = len(Q), len(I)
@@ -182,6 +249,7 @@ def main():
     buf += struct.pack('<%dH' % IC, *I)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     open(args.out, 'wb').write(buf)
+    print('mesh      : %d verts, %d tris' % (V, IC // 3))
     print('wrote     : %s (%.0f KB)' % (args.out, len(buf) / 1024))
     extras = (J.get('asset') or {}).get('extras') or {}
     if extras:
